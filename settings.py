@@ -56,6 +56,11 @@ MODULES = {
     "serverupdate": ("anti_server_update", None, None),
     "prune": ("anti_prune", None, None),
     "roleperm": ("anti_role_perm", None, None),
+    "raid": ("anti_raid", "raid_threshold", "raid_window"),
+    "spam": ("anti_spam", "spam_threshold", "spam_window"),
+    "link": ("anti_link", None, None),
+    "invite": ("anti_invite", None, None),
+    "token": ("anti_token", None, None),
 }
 
 PUNISHMENT_CHOICES = ("ban", "kick", "strip", "mute")
@@ -228,7 +233,12 @@ class Settings(commands.Cog):
             f"Agregar Bot {toggle('anti_bot_add')}  "
             f"Everyone {toggle('anti_everyone_mention')}\n"
             f"Actualizar Server {toggle('anti_server_update')}  "
-            f"Prune {toggle('anti_prune')}"
+            f"Prune {toggle('anti_prune')}\n"
+            f"Raid {toggle('anti_raid')}  "
+            f"Spam {toggle('anti_spam')}  "
+            f"Link {toggle('anti_link')}  "
+            f"Invite {toggle('anti_invite')}\n"
+            f"Token Filtrado {toggle('anti_token')}"
         )
         e.add_field(name="Módulos", value=modules_text, inline=False)
 
@@ -241,7 +251,9 @@ class Settings(commands.Cog):
             f"Crear.Rol: `{an.get('role_create_threshold',3)}/{an.get('role_create_window',10)}s`\n"
             f"Webhook: `{an.get('webhook_create_threshold',3)}/{an.get('webhook_create_window',10)}s`  "
             f"Menciones: `{an.get('mention_threshold',10)}/{an.get('mention_window',8)}s`  "
-            f"Elim.Emoji: `{an.get('emoji_delete_threshold',5)}/{an.get('emoji_delete_window',10)}s`"
+            f"Elim.Emoji: `{an.get('emoji_delete_threshold',5)}/{an.get('emoji_delete_window',10)}s`\n"
+            f"Raid: `{an.get('raid_threshold',6)}/{an.get('raid_window',10)}s` (lockdown `{an.get('raid_lockdown_minutes',10)}min`)  "
+            f"Spam: `{an.get('spam_threshold',6)}/{an.get('spam_window',5)}s`"
         )
         e.add_field(name="Thresholds (cantidad/ventana)", value=thresholds, inline=False)
 
@@ -407,6 +419,61 @@ class Settings(commands.Cog):
 
         msg = f"Edad mínima de cuenta configurada a `{days} días`." if days else "Verificación de edad de cuenta **desactivada**."
         await ctx.send(embed=build_embed(ctx.guild, msg, 0x57f287))
+
+    @antinuke.command(name="lockdown")
+    @is_manager()
+    async def antinuke_lockdown(self, ctx, minutes: int):
+        """
+        Minutos que dura el lockdown (verification level al máximo) cuando
+        se detecta un raid. Usa 0 para no subir el verification level
+        (solo expulsar/banear a los que entran durante el raid).
+        """
+        if minutes < 0 or minutes > 1440:
+            return await ctx.send(embed=build_embed(ctx.guild, "Los minutos deben estar entre 0 y 1440."))
+
+        config = db.get_guild(ctx.guild.id)
+        config["antinuke"]["raid_lockdown_minutes"] = minutes
+        db.update_guild(ctx.guild.id, config)
+        _invalidate_cache(ctx.guild.id)
+
+        msg = f"Lockdown de raid configurado a `{minutes} minutos`." if minutes else "Lockdown de verification level **desactivado** (solo se expulsará/baneará a los raiders)."
+        await ctx.send(embed=build_embed(ctx.guild, msg, 0x57f287))
+
+    @antinuke.group(name="linkwhitelist", aliases=["lwl"], invoke_without_command=True)
+    @is_manager()
+    async def antinuke_linkwhitelist(self, ctx):
+        """Ver los dominios permitidos para Anti-Link."""
+        config = db.get_guild(ctx.guild.id)
+        domains = config.get("link_whitelist", [])
+        desc = "\n".join(f"• `{d}`" for d in domains) if domains else "No hay dominios en la whitelist."
+        await ctx.send(embed=build_embed(ctx.guild, desc))
+
+    @antinuke_linkwhitelist.command(name="add")
+    @is_manager()
+    async def antinuke_linkwhitelist_add(self, ctx, domain: str):
+        """Agrega un dominio permitido, ej: youtube.com"""
+        domain = domain.lower().removeprefix("www.")
+        config = db.get_guild(ctx.guild.id)
+        config.setdefault("link_whitelist", [])
+        if domain in config["link_whitelist"]:
+            return await ctx.send(embed=build_embed(ctx.guild, f"`{domain}` ya está en la whitelist."))
+        config["link_whitelist"].append(domain)
+        db.update_guild(ctx.guild.id, config)
+        _invalidate_cache(ctx.guild.id)
+        await ctx.send(embed=build_embed(ctx.guild, f"`{domain}` agregado a la whitelist de links.", 0x57f287))
+
+    @antinuke_linkwhitelist.command(name="remove")
+    @is_manager()
+    async def antinuke_linkwhitelist_remove(self, ctx, domain: str):
+        """Quita un dominio de la whitelist."""
+        domain = domain.lower().removeprefix("www.")
+        config = db.get_guild(ctx.guild.id)
+        if domain not in config.get("link_whitelist", []):
+            return await ctx.send(embed=build_embed(ctx.guild, f"`{domain}` no está en la whitelist."))
+        config["link_whitelist"].remove(domain)
+        db.update_guild(ctx.guild.id, config)
+        _invalidate_cache(ctx.guild.id)
+        await ctx.send(embed=build_embed(ctx.guild, f"`{domain}` quitado de la whitelist.", 0xed4245))
 
     @antinuke.command(name="guildage")
     @is_manager()
