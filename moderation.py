@@ -505,10 +505,19 @@ class Moderation(commands.Cog):
     async def role(self, ctx: commands.Context, member: discord.Member = None, role: discord.Role = None):
         if member is None or role is None:
             return await ctx.send(embed=discord.Embed(
-                description="Usa `,role <@usuario> <@rol>` para añadir, `,role remove <@usuario> <@rol>` para quitar, "
+                description="Usa `,role add <@usuario> <@rol>` para añadir, `,role remove <@usuario> <@rol>` para quitar, "
                             "o `,role info <@rol>` para ver información del rol.",
                 color=0x2b2d31,
             ))
+        await self._role_add(ctx, member, role)
+
+    @role.command(name="add")
+    @commands.has_permissions(manage_roles=True)
+    @commands.bot_has_permissions(manage_roles=True)
+    async def role_add(self, ctx: commands.Context, member: discord.Member, role: discord.Role):
+        await self._role_add(ctx, member, role)
+
+    async def _role_add(self, ctx: commands.Context, member: discord.Member, role: discord.Role):
         if role >= ctx.guild.me.top_role:
             return await ctx.send(embed=discord.Embed(description="Ese rol está por encima del mío, no puedo asignarlo.", color=0xed4245))
         if ctx.author.id != ctx.guild.owner_id and role >= ctx.author.top_role:
@@ -516,8 +525,8 @@ class Moderation(commands.Cog):
 
         await member.add_roles(role, reason=f"Añadido por {ctx.author}")
         await ctx.send(embed=discord.Embed(
-            description=f"Se añadió el rol {role.mention} a {member.mention}.",
-            color=0x57f287,
+            description=f"➕ {ctx.author.mention}: Added {role.mention} to {member.mention}",
+            color=discord.Color.blurple(),
         ))
 
     @role.command(name="remove")
@@ -531,8 +540,8 @@ class Moderation(commands.Cog):
 
         await member.remove_roles(role, reason=f"Removido por {ctx.author}")
         await ctx.send(embed=discord.Embed(
-            description=f"Se quitó el rol {role.mention} a {member.mention}.",
-            color=0x57f287,
+            description=f"➖ {ctx.author.mention}: Removed {role.mention} from {member.mention}",
+            color=discord.Color.blurple(),
         ))
 
     @role.command(name="info")
