@@ -344,6 +344,15 @@ class Settings(commands.Cog):
             ctx.guild, f"Ventana de `{module}` configurada a `{seconds}s`.", 0x57f287
         ))
 
+    @antinuke.command(name="modules", aliases=["modulos"])
+    @is_manager()
+    async def antinuke_modules(self, ctx):
+        """Abre un menú con TODOS los módulos de AntiNuke para configurarlos con un select, sin escribir el nombre de cada uno."""
+        from module_panel import build_modules_browser_embed, ModuleBrowserView
+        embed = build_modules_browser_embed(ctx.guild)
+        view = ModuleBrowserView(self.bot)
+        await ctx.send(embed=embed, view=view)
+
     @antinuke.command(name="module")
     @is_manager()
     async def antinuke_module(self, ctx, module: str, state: str = None):
