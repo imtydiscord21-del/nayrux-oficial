@@ -33,6 +33,7 @@ from discord.ext import commands
 from config import db
 from logger import _resolve_log_channel
 from webhook_utils import send_via_webhook
+from emojis import ADD, REMOVE
 import re
 import logging
 from datetime import datetime, timezone, timedelta
@@ -525,7 +526,7 @@ class Moderation(commands.Cog):
 
         await member.add_roles(role, reason=f"Añadido por {ctx.author}")
         await ctx.send(embed=discord.Embed(
-            description=f"➕ {ctx.author.mention}: Added {role.mention} to {member.mention}",
+            description=f"{ADD} {ctx.author.mention}: Added {role.mention} to {member.mention}",
             color=discord.Color.blurple(),
         ))
 
@@ -540,7 +541,7 @@ class Moderation(commands.Cog):
 
         await member.remove_roles(role, reason=f"Removido por {ctx.author}")
         await ctx.send(embed=discord.Embed(
-            description=f"➖ {ctx.author.mention}: Removed {role.mention} from {member.mention}",
+            description=f"{REMOVE} {ctx.author.mention}: Removed {role.mention} from {member.mention}",
             color=discord.Color.blurple(),
         ))
 
