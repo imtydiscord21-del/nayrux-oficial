@@ -294,6 +294,8 @@ CATEGORIES = {
                 ",list",
                 ",auditlogs",
                 ",vanityinfo",
+                ",snipe / ,s",
+                ",editsnipe / ,es",
             ], None),
         ],
     },
