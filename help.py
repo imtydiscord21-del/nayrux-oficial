@@ -6,7 +6,7 @@ import logging
 log = logging.getLogger("antinuke.help")
 
 SUPPORT_SERVER_URL = "https://discord.gg/hMJ3wWzkFF"
-BRAND_ICON_URL = "https://i.pinimg.com/736x/78/ab/07/78ab072e66ef17fe638524e9a072cc74.jpg"
+BRAND_ICON_URL = "https://i.pinimg.com/736x/78/ab/07/78ab072e66ef17fe638524e9a072cc74.jpg"  # ya no se usa como thumbnail del help (ahora usa el ícono del server)
 
 # ── Tabla de comandos ──────────────────────────────────────────────────────
 # Cada categoría tiene "sections": lista de (subtítulo, [comandos], nota_opcional)
@@ -72,6 +72,7 @@ CATEGORIES = {
                 ",antinuke status",
                 ",antinuke punishment <ban|kick|strip|mute>",
                 ",antinuke module <nombre>",
+                ",antinuke modules",
                 ",antinuke module <nombre> <on|off>",
                 ",antinuke threshold <módulo> <n>",
                 ",antinuke window <módulo> <segundos>",
@@ -350,11 +351,21 @@ ALIASES = {
 }
 
 
+def _localize(cmd: str, prefix: str) -> str:
+    """Reemplaza la ',' con la que están escritos los comandos de CATEGORIES
+    por el prefix real configurado en el server."""
+    return prefix + cmd[1:] if cmd.startswith(",") else cmd
+
+
+def _guild_icon(guild: discord.Guild) -> str | None:
+    return guild.icon.url if guild and guild.icon else None
+
+
 def _total_commands() -> int:
     return sum(len(cmds) for data in CATEGORIES.values() for _, cmds, _ in data["sections"])
 
 
-def _build_overview_embed(bot: discord.Client, prefix: str) -> discord.Embed:
+def _build_overview_embed(bot: discord.Client, guild: discord.Guild, prefix: str) -> discord.Embed:
     e = discord.Embed(
         description=(
             f"**Prefix:** `{prefix}`\n"
@@ -365,20 +376,25 @@ def _build_overview_embed(bot: discord.Client, prefix: str) -> discord.Embed:
         color=0x2b2d31,
     )
     e.set_author(name=f"{bot.user.name} Help", icon_url=bot.user.display_avatar.url)
-    e.set_thumbnail(url=BRAND_ICON_URL)
+    icon = _guild_icon(guild)
+    if icon:
+        e.set_thumbnail(url=icon)
     e.set_footer(text=f"Usa {prefix}help <comando> para ayuda de un comando específico")
     return e
 
 
-def _build_category_embed(bot: discord.Client, cat_key: str) -> discord.Embed:
+def _build_category_embed(bot: discord.Client, guild: discord.Guild, cat_key: str, prefix: str) -> discord.Embed:
     data = CATEGORIES[cat_key]
     e = discord.Embed(title=data["label"], color=0x2b2d31)
     e.set_author(name=f"{bot.user.name} Help", icon_url=bot.user.display_avatar.url)
-    e.set_thumbnail(url=BRAND_ICON_URL)
+    icon = _guild_icon(guild)
+    if icon:
+        e.set_thumbnail(url=icon)
 
     parts = []
     for subheader, cmds, note in data["sections"]:
-        block = "```\n" + "\n".join(cmds) + "\n```"
+        localized = [_localize(c, prefix) for c in cmds]
+        block = "```\n" + "\n".join(localized) + "\n```"
         parts.append(f"**{subheader}**\n{block}")
         if note:
             parts.append(note)
@@ -390,11 +406,12 @@ def _build_category_embed(bot: discord.Client, cat_key: str) -> discord.Embed:
 
 
 class CategorySelect(discord.ui.Select):
-    def __init__(self, bot: discord.Client, prefix: str):
+    def __init__(self, bot: discord.Client, guild: discord.Guild, prefix: str):
         self.bot = bot
+        self.guild = guild
         self.prefix = prefix
         options = [
-            discord.SelectOption(label="🏠 Inicio", value="__home__", description="Volver al menú principal"),
+            discord.SelectOption(label="Inicio", value="__home__", description="Volver al menú principal"),
         ] + [
             discord.SelectOption(label=data["label"], value=key, description=data["description"][:100])
             for key, data in CATEGORIES.items()
@@ -403,18 +420,18 @@ class CategorySelect(discord.ui.Select):
 
     async def callback(self, interaction: discord.Interaction):
         if self.values[0] == "__home__":
-            embed = _build_overview_embed(self.bot, self.prefix)
+            embed = _build_overview_embed(self.bot, self.guild, self.prefix)
         else:
-            embed = _build_category_embed(self.bot, self.values[0])
+            embed = _build_category_embed(self.bot, self.guild, self.values[0], self.prefix)
         await interaction.response.edit_message(embed=embed, view=self.view)
 
 
 class HelpView(discord.ui.View):
-    def __init__(self, bot: discord.Client, prefix: str):
+    def __init__(self, bot: discord.Client, guild: discord.Guild, prefix: str):
         super().__init__(timeout=120)
         self.bot = bot
         self.message: discord.Message | None = None
-        self.add_item(CategorySelect(bot, prefix))
+        self.add_item(CategorySelect(bot, guild, prefix))
         self.add_item(discord.ui.Button(label="Support Server", url=SUPPORT_SERVER_URL, style=discord.ButtonStyle.link))
 
     async def on_timeout(self):
@@ -438,8 +455,8 @@ class Help(commands.Cog):
         prefix = config.get("prefix", ",")
 
         if category is None:
-            embed = _build_overview_embed(self.bot, prefix)
-            view = HelpView(self.bot, prefix)
+            embed = _build_overview_embed(self.bot, ctx.guild, prefix)
+            view = HelpView(self.bot, ctx.guild, prefix)
             view.message = await ctx.send(embed=embed, view=view)
             return
 
@@ -455,8 +472,8 @@ class Help(commands.Cog):
             e.set_author(name=f"{self.bot.user.name} Help", icon_url=self.bot.user.display_avatar.url)
             return await ctx.send(embed=e)
 
-        embed = _build_category_embed(self.bot, cat_key)
-        view = HelpView(self.bot, prefix)
+        embed = _build_category_embed(self.bot, ctx.guild, cat_key, prefix)
+        view = HelpView(self.bot, ctx.guild, prefix)
         view.message = await ctx.send(embed=embed, view=view)
 
 
