@@ -310,6 +310,25 @@ CATEGORIES = {
             ], None),
         ],
     },
+    "premium": {
+        "label": "Premium",
+        "description": "Exclusivo para el dueño del bot y el dueño del servidor.",
+        "sections": [
+            ("Perfil del Bot", [
+                ",changeavatar <url>",
+                ",changebanner <url>",
+                ",changename <nombre>",
+                ",resetprofile",
+            ], None),
+            ("Perfil del Servidor", [
+                ",guildicon <url>",
+                ",guildbanner <url>",
+            ], None),
+            ("Utilidad", [
+                ",selfpurge [cantidad]",
+            ], None),
+        ],
+    },
 }
 
 ALIASES = {
@@ -331,19 +350,23 @@ ALIASES = {
 }
 
 
+def _total_commands() -> int:
+    return sum(len(cmds) for data in CATEGORIES.values() for _, cmds, _ in data["sections"])
+
+
 def _build_overview_embed(bot: discord.Client, prefix: str) -> discord.Embed:
     e = discord.Embed(
         description=(
-            f"Usa `{prefix}help <comando>` para ayuda sobre un comando específico.\n"
-            "Los parámetros en `<>` son obligatorios, `[]` son opcionales.\n"
-            f"Únete al [servidor de soporte]({SUPPORT_SERVER_URL}) para más ayuda."
+            f"**Prefix:** `{prefix}`\n"
+            f"**Commands:** `{_total_commands()}` | **Categories:** `{len(CATEGORIES)}`\n\n"
+            f"[Support Server]({SUPPORT_SERVER_URL})\n\n"
+            "Selecciona una categoría abajo para ver sus comandos."
         ),
         color=0x2b2d31,
     )
     e.set_author(name=f"{bot.user.name} Help", icon_url=bot.user.display_avatar.url)
     e.set_thumbnail(url=BRAND_ICON_URL)
-    e.set_footer(text=f"Selecciona una categoría desde el menú de abajo · {bot.user.name}")
-    e.timestamp = discord.utils.utcnow()
+    e.set_footer(text=f"Usa {prefix}help <comando> para ayuda de un comando específico")
     return e
 
 
@@ -367,25 +390,31 @@ def _build_category_embed(bot: discord.Client, cat_key: str) -> discord.Embed:
 
 
 class CategorySelect(discord.ui.Select):
-    def __init__(self, bot: discord.Client):
+    def __init__(self, bot: discord.Client, prefix: str):
         self.bot = bot
+        self.prefix = prefix
         options = [
+            discord.SelectOption(label="🏠 Inicio", value="__home__", description="Volver al menú principal"),
+        ] + [
             discord.SelectOption(label=data["label"], value=key, description=data["description"][:100])
             for key, data in CATEGORIES.items()
         ]
         super().__init__(placeholder="Selecciona una categoría...", options=options)
 
     async def callback(self, interaction: discord.Interaction):
-        embed = _build_category_embed(self.bot, self.values[0])
+        if self.values[0] == "__home__":
+            embed = _build_overview_embed(self.bot, self.prefix)
+        else:
+            embed = _build_category_embed(self.bot, self.values[0])
         await interaction.response.edit_message(embed=embed, view=self.view)
 
 
 class HelpView(discord.ui.View):
-    def __init__(self, bot: discord.Client):
+    def __init__(self, bot: discord.Client, prefix: str):
         super().__init__(timeout=120)
         self.bot = bot
         self.message: discord.Message | None = None
-        self.add_item(CategorySelect(bot))
+        self.add_item(CategorySelect(bot, prefix))
         self.add_item(discord.ui.Button(label="Support Server", url=SUPPORT_SERVER_URL, style=discord.ButtonStyle.link))
 
     async def on_timeout(self):
@@ -410,7 +439,7 @@ class Help(commands.Cog):
 
         if category is None:
             embed = _build_overview_embed(self.bot, prefix)
-            view = HelpView(self.bot)
+            view = HelpView(self.bot, prefix)
             view.message = await ctx.send(embed=embed, view=view)
             return
 
@@ -427,7 +456,7 @@ class Help(commands.Cog):
             return await ctx.send(embed=e)
 
         embed = _build_category_embed(self.bot, cat_key)
-        view = HelpView(self.bot)
+        view = HelpView(self.bot, prefix)
         view.message = await ctx.send(embed=embed, view=view)
 
 
