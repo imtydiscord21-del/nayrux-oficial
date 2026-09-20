@@ -27,6 +27,11 @@ MODULE_LABELS = {
     "serverupdate": "Anti-Actualización del Servidor",
     "prune": "Anti-Prune",
     "roleperm": "Anti-Permisos de Rol",
+    "raid": "Anti-Raid (oleada de joins)",
+    "spam": "Anti-Spam de Mensajes",
+    "link": "Anti-Link",
+    "invite": "Anti-Invite",
+    "token": "Anti-Token Filtrado",
 }
 
 PUNISHMENT_CHOICES = ("ban", "kick", "strip", "mute")
