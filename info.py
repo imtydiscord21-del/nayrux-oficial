@@ -20,6 +20,114 @@ def _info_embed(title: str = None, description: str = None) -> discord.Embed:
     return e
 
 
+PAGE_SIZE = 10
+
+
+def _role_info_embed(role: discord.Role) -> discord.Embed:
+    e = discord.Embed(title=role.name, color=role.color if role.color.value else 0x2b2d31)
+    e.add_field(name="ID", value=str(role.id), inline=True)
+    e.add_field(name="Color", value=str(role.color), inline=True)
+    e.add_field(name="Posición", value=str(role.position), inline=True)
+    e.add_field(name="Miembros", value=str(len(role.members)), inline=True)
+    e.add_field(name="Mencionable", value="Sí" if role.mentionable else "No", inline=True)
+    e.add_field(name="Se muestra aparte", value="Sí" if role.hoist else "No", inline=True)
+    e.add_field(name="Creado", value=discord.utils.format_dt(role.created_at, "R"), inline=True)
+    return e
+
+
+class RoleDetailSelect(discord.ui.Select):
+    def __init__(self, page_roles: list[discord.Role]):
+        options = [
+            discord.SelectOption(label=r.name[:100], value=str(r.id), description=f"{len(r.members)} miembros")
+            for r in page_roles
+        ]
+        super().__init__(placeholder="Selecciona un rol para mirar...", options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        view: "RolesView" = self.view
+        role = interaction.guild.get_role(int(self.values[0]))
+        if role is None:
+            return await interaction.response.send_message("Ese rol ya no existe.", ephemeral=True)
+        detail_view = discord.ui.View(timeout=120)
+        detail_view.add_item(BackToListButton(view))
+        await interaction.response.edit_message(embed=_role_info_embed(role), view=detail_view)
+
+
+class BackToListButton(discord.ui.Button):
+    def __init__(self, roles_view: "RolesView"):
+        super().__init__(label="◀ Volver a la lista", style=discord.ButtonStyle.secondary, row=1)
+        self.roles_view = roles_view
+
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.edit_message(embed=self.roles_view.build_page_embed(), view=self.roles_view)
+
+
+class RolesView(discord.ui.View):
+    def __init__(self, guild: discord.Guild, roles: list[discord.Role]):
+        super().__init__(timeout=120)
+        self.guild = guild
+        self.roles = roles
+        self.page = 0
+        self.total_pages = max(1, (len(roles) + PAGE_SIZE - 1) // PAGE_SIZE)
+        self.message: discord.Message | None = None
+        self._render()
+
+    def _current_page_roles(self) -> list[discord.Role]:
+        start = self.page * PAGE_SIZE
+        return self.roles[start:start + PAGE_SIZE]
+
+    def build_page_embed(self) -> discord.Embed:
+        start = self.page * PAGE_SIZE
+        lines = [f"`{start + i + 1}.` {r.mention}" for i, r in enumerate(self._current_page_roles())]
+        e = discord.Embed(
+            title=f"Lista de roles de {self.guild.name} [{len(self.roles)}]",
+            description="\n".join(lines),
+            color=0x2b2d31,
+        )
+        e.set_thumbnail(url=self.guild.icon.url if self.guild.icon else None)
+        e.set_footer(text=f"Página {self.page + 1} de {self.total_pages}")
+        return e
+
+    def _render(self):
+        self.clear_items()
+        self.add_item(self.PrevButton(self))
+        self.add_item(self.NextButton(self))
+        self.add_item(RoleDetailSelect(self._current_page_roles()))
+
+    class PrevButton(discord.ui.Button):
+        def __init__(self, outer: "RolesView"):
+            super().__init__(label="◀", style=discord.ButtonStyle.secondary, disabled=outer.page == 0, row=0)
+            self.outer = outer
+
+        async def callback(self, interaction: discord.Interaction):
+            self.outer.page = max(0, self.outer.page - 1)
+            self.outer._render()
+            await interaction.response.edit_message(embed=self.outer.build_page_embed(), view=self.outer)
+
+    class NextButton(discord.ui.Button):
+        def __init__(self, outer: "RolesView"):
+            super().__init__(
+                label="▶", style=discord.ButtonStyle.secondary,
+                disabled=outer.page >= outer.total_pages - 1, row=0,
+            )
+            self.outer = outer
+
+        async def callback(self, interaction: discord.Interaction):
+            self.outer.page = min(self.outer.total_pages - 1, self.outer.page + 1)
+            self.outer._render()
+            await interaction.response.edit_message(embed=self.outer.build_page_embed(), view=self.outer)
+
+    async def on_timeout(self):
+        if self.message is None:
+            return
+        for item in self.children:
+            item.disabled = True
+        try:
+            await self.message.edit(view=self)
+        except discord.HTTPException:
+            pass
+
+
 class Info(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -240,11 +348,12 @@ class Info(commands.Cog):
 
     @commands.command(name="roles")
     async def roles(self, ctx: commands.Context):
-        roles = [r.mention for r in reversed(ctx.guild.roles) if r.name != "@everyone"]
-        await ctx.send(embed=_info_embed(
-            title=f"Roles ({len(roles)})",
-            description=", ".join(roles[:40]) or "Sin roles",
-        ))
+        roles = [r for r in reversed(ctx.guild.roles) if r.name != "@everyone"]
+        if not roles:
+            return await ctx.send(embed=_info_embed(description="Este servidor no tiene roles."))
+        view = RolesView(ctx.guild, roles)
+        embed = view.build_page_embed()
+        view.message = await ctx.send(embed=embed, view=view)
 
     @commands.command(name="colorinfo")
     async def colorinfo(self, ctx: commands.Context, *, role: discord.Role):
