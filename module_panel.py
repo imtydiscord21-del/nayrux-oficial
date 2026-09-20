@@ -381,3 +381,67 @@ class ModuleConfigView(discord.ui.View):
     async def on_timeout(self):
         for item in self.children:
             item.disabled = True
+
+
+class BackToModulesButton(discord.ui.Button):
+    def __init__(self, bot: discord.Client):
+        super().__init__(label="◀ Módulos", style=discord.ButtonStyle.secondary, row=1)
+        self.bot = bot
+
+    async def callback(self, interaction: discord.Interaction):
+        embed = build_modules_browser_embed(interaction.guild)
+        view = ModuleBrowserView(self.bot)
+        await interaction.response.edit_message(embed=embed, view=view)
+
+
+class ModuleConfigWithBackView(discord.ui.View):
+    """Igual que ModuleConfigView, pero con un botón para volver al browser de módulos."""
+    def __init__(self, bot: discord.Client, module_key: str):
+        super().__init__(timeout=180)
+        self.add_item(ModuleActionSelect(bot, module_key))
+        self.add_item(BackToModulesButton(bot))
+
+    async def on_timeout(self):
+        for item in self.children:
+            item.disabled = True
+
+
+def build_modules_browser_embed(guild: discord.Guild) -> discord.Embed:
+    e = discord.Embed(
+        title="Módulos de AntiNuke",
+        description=(
+            f"Este servidor tiene **{len(MODULES)}** módulos de protección.\n"
+            "Elegí uno del menú de abajo para activarlo, desactivarlo, configurar su "
+            "castigo, sus logs, su whitelist o su threshold."
+        ),
+        color=0x2b2d31,
+    )
+    if guild.icon:
+        e.set_thumbnail(url=guild.icon.url)
+    return e
+
+
+class ModuleBrowserSelect(discord.ui.Select):
+    def __init__(self, bot: discord.Client):
+        self.bot = bot
+        options = [
+            discord.SelectOption(label=MODULE_LABELS.get(key, key), value=key)
+            for key in MODULES
+        ]
+        super().__init__(placeholder="Selecciona un módulo para configurar...", options=options)
+
+    async def callback(self, interaction: discord.Interaction):
+        module_key = self.values[0]
+        embed = build_module_embed(self.bot, interaction.guild, module_key)
+        view = ModuleConfigWithBackView(self.bot, module_key)
+        await interaction.response.edit_message(embed=embed, view=view)
+
+
+class ModuleBrowserView(discord.ui.View):
+    def __init__(self, bot: discord.Client):
+        super().__init__(timeout=180)
+        self.add_item(ModuleBrowserSelect(bot))
+
+    async def on_timeout(self):
+        for item in self.children:
+            item.disabled = True
