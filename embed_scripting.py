@@ -13,9 +13,15 @@ Sintaxis:
   $v{timestamp: true}
 
 Variables disponibles (se resuelven según el contexto disponible):
+  {user} (= {user.tag}, texto plano — usalo en author/footer/title)
   {user.mention} {user.tag} {user.name} {user.id} {user.avatar} {user.created}
-  {guild.name} {guild.count} {guild.icon} {guild.id} {guild.boostcount}
+  {guild.name} {guild.count} {guild.icon} {guild.id} {guild.boostcount} {guild.vanity}
   {channel.mention} {channel.name}
+
+Nota: Discord NO renderiza menciones (@usuario) dentro de author, footer ni title
+de un embed — ahí siempre se ve el texto crudo. Usá {user} o {user.tag} en esos
+campos; {user.mention} solo se ve como mention clickeable en message, description
+o fields.
 """
 
 import discord
@@ -129,6 +135,7 @@ def resolve_vars(text: str, *, member=None, guild=None, channel=None) -> str:
             .replace("{user.id}", str(member.id))
             .replace("{user.avatar}", member.display_avatar.url)
             .replace("{user.created}", f"<t:{int(member.created_at.timestamp())}:R>")
+            .replace("{user}", str(member))
         )
     if guild is not None:
         text = (
@@ -138,6 +145,7 @@ def resolve_vars(text: str, *, member=None, guild=None, channel=None) -> str:
             .replace("{guild.id}", str(guild.id))
             .replace("{guild.icon}", guild.icon.url if guild.icon else "")
             .replace("{guild.boostcount}", str(guild.premium_subscription_count or 0))
+            .replace("{guild.vanity}", guild.vanity_url_code or "")
         )
     if channel is not None:
         text = (
@@ -183,12 +191,14 @@ def build_message(parsed: dict, *, member=None, guild=None, channel=None):
 
         if parsed.get("author"):
             parts = [p.strip() for p in parsed["author"].split("&&")]
-            icon = r(parts[1]) if len(parts) > 1 and parts[1].startswith("http") else None
+            icon_resolved = r(parts[1]) if len(parts) > 1 else None
+            icon = icon_resolved if icon_resolved and icon_resolved.startswith("http") else None
             embed.set_author(name=r(parts[0]), icon_url=icon)
 
         if parsed.get("footer"):
             parts = [p.strip() for p in parsed["footer"].split("&&")]
-            icon = r(parts[1]) if len(parts) > 1 and parts[1].startswith("http") else None
+            icon_resolved = r(parts[1]) if len(parts) > 1 else None
+            icon = icon_resolved if icon_resolved and icon_resolved.startswith("http") else None
             embed.set_footer(text=r(parts[0]), icon_url=icon)
 
         if parsed.get("thumbnail"):
