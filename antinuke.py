@@ -15,6 +15,8 @@ Architecture:
 import discord
 from discord.ext import commands
 import asyncio
+import re
+from urllib.parse import urlparse
 from collections import defaultdict, deque
 from datetime import datetime, timezone, timedelta
 import logging
@@ -51,6 +53,27 @@ _CONFIG_TTL = 60  # seconds
 # Si el mismo action vuelve a ocurrir en 5s, skip audit log fetch
 _executor_cache: dict = {}
 _EXECUTOR_TTL = 5  # seconds
+
+# Raid mode: guild_id → (expires_at, original_verification_level)
+# Mientras el servidor está en raid mode, cada nuevo miembro que entra se
+# castiga al instante (sin esperar el rate-limit normal) y se restaura el
+# nivel de verificación original cuando expira.
+_raid_mode: dict[int, tuple[datetime, discord.VerificationLevel]] = {}
+
+# ── Regex de detección para anti-link / anti-invite / anti-token ─────────────
+_URL_RE = re.compile(r"https?://\S+", re.IGNORECASE)
+_INVITE_RE = re.compile(r"(?:discord\.gg/|discord(?:app)?\.com/invite/)([a-zA-Z0-9-]+)", re.IGNORECASE)
+# Formato clásico de token de bot de Discord: 3 segmentos base64 separados por puntos.
+_TOKEN_RE = re.compile(r"[MNO][a-zA-Z\d_-]{23,25}\.[a-zA-Z\d_-]{6}\.[a-zA-Z\d_-]{27,38}")
+
+
+def _extract_domain(url: str) -> str:
+    """Devuelve el dominio (sin 'www.') de una URL, o '' si no se pudo parsear."""
+    try:
+        netloc = urlparse(url).netloc.lower()
+        return netloc[4:] if netloc.startswith("www.") else netloc
+    except Exception:
+        return ""
 
 
 # ── Config cache ──────────────────────────────────────────────────────────────
@@ -223,7 +246,59 @@ async def _punish(guild: discord.Guild, member: discord.Member, punishment: str)
         punishing.discard(key)
 
 
-# ── Auto-unban ────────────────────────────────────────────────────────────────
+# ── Raid lockdown ─────────────────────────────────────────────────────────────
+
+async def _enter_raid_mode(guild: discord.Guild, lockdown_minutes: int):
+    """Activa el modo raid: sube el verification level al máximo por un tiempo,
+    y lo revierte solo si nadie volvió a extender el lockdown mientras tanto."""
+    now = datetime.now(timezone.utc)
+    if guild.id not in _raid_mode:
+        original_level = guild.verification_level
+        try:
+            if guild.verification_level != discord.VerificationLevel.highest:
+                await guild.edit(
+                    verification_level=discord.VerificationLevel.highest,
+                    reason="AntiNuke: raid detectado, subiendo verificación temporalmente",
+                )
+        except (discord.Forbidden, discord.HTTPException) as e:
+            log.warning(f"[{guild.name}] No se pudo subir verification level: {e}")
+        _raid_mode[guild.id] = (now + timedelta(minutes=lockdown_minutes), original_level)
+    else:
+        _, original_level = _raid_mode[guild.id]
+        _raid_mode[guild.id] = (now + timedelta(minutes=lockdown_minutes), original_level)
+
+    expires_at = _raid_mode[guild.id][0]
+
+    async def _revert_later():
+        await asyncio.sleep(lockdown_minutes * 60 + 1)
+        entry = _raid_mode.get(guild.id)
+        if not entry:
+            return
+        current_expiry, original = entry
+        if current_expiry != expires_at:
+            return  # el lockdown fue extendido por otro raid mientras tanto, no revertir todavía
+        _raid_mode.pop(guild.id, None)
+        try:
+            if guild.verification_level != original:
+                await guild.edit(
+                    verification_level=original,
+                    reason="AntiNuke: fin del lockdown por raid",
+                )
+        except (discord.Forbidden, discord.HTTPException):
+            pass
+
+    asyncio.create_task(_revert_later())
+
+
+def _in_raid_mode(guild_id: int) -> bool:
+    entry = _raid_mode.get(guild_id)
+    if not entry:
+        return False
+    expires_at, _ = entry
+    return datetime.now(timezone.utc) < expires_at
+
+
+
 
 async def _get_invite_link(guild: discord.Guild) -> str | None:
     """Genera (o reutiliza) una invitación para reenviar a usuarios desbaneados."""
@@ -671,6 +746,136 @@ class AntiNuke(commands.Cog):
         if not an.get("enabled", False):
             return
 
+        # ── ANTI-TOKEN: token de bot filtrado en el mensaje ────────────────────
+        # Siempre se borra sin importar whitelist: dejarlo visible es peor que
+        # borrar el mensaje de alguien que no debía haberlo pegado.
+        if an.get("anti_token", True) and _TOKEN_RE.search(message.content):
+            try:
+                await message.delete()
+            except (discord.Forbidden, discord.HTTPException):
+                pass
+            try:
+                await message.author.send(embed=discord.Embed(
+                    description=(
+                        "Borré un mensaje tuyo en el servidor porque contenía algo con "
+                        "el formato de un **token de bot de Discord**. Si es un token "
+                        "real, regeneralo cuanto antes en el Developer Portal — "
+                        "cualquiera que lo tenga puede controlar ese bot."
+                    ),
+                    color=0xed4245,
+                ))
+            except discord.Forbidden:
+                pass
+            asyncio.create_task(send_log(
+                guild,
+                action="delete",
+                punishment="delete",
+                target=message.author,
+                moderator=guild.me,
+                reason="Mensaje con formato de token de bot filtrado",
+                module="Anti-Token",
+                category="messages",
+                channel_override=_resolve_module_log_channel(guild, config, "token"),
+            ))
+            return
+
+        executor_for_content = guild.get_member(message.author.id)
+
+        # ── ANTI-INVITE: invitaciones a otros servidores ───────────────────────
+        if executor_for_content and an.get("anti_invite", True) and not _is_whitelisted(
+            guild.id, executor_for_content.id, self.bot.owner_ids, module_key="invite", member=executor_for_content
+        ):
+            invite_match = _INVITE_RE.search(message.content)
+            if invite_match:
+                code = invite_match.group(1)
+                foreign = True
+                try:
+                    invite = await self.bot.fetch_invite(code)
+                    if invite.guild and invite.guild.id == guild.id:
+                        foreign = False
+                except (discord.NotFound, discord.HTTPException):
+                    foreign = True  # inválida / no resoluble → se trata como no autorizada
+
+                if foreign:
+                    try:
+                        await message.delete()
+                    except (discord.Forbidden, discord.HTTPException):
+                        pass
+                    punishment_here = _resolve_punishment(config, "invite")
+                    asyncio.create_task(_punish(guild, executor_for_content, punishment_here))
+                    asyncio.create_task(send_log(
+                        guild,
+                        action=punishment_here,
+                        punishment=punishment_here,
+                        target=executor_for_content,
+                        moderator=guild.me,
+                        reason="Compartió una invitación a otro servidor",
+                        module="Anti-Invite",
+                        category="messages",
+                        channel_override=_resolve_module_log_channel(guild, config, "invite"),
+                    ))
+                    return
+
+        # ── ANTI-LINK: links no autorizados ─────────────────────────────────────
+        if executor_for_content and an.get("anti_link", False) and not _is_whitelisted(
+            guild.id, executor_for_content.id, self.bot.owner_ids, module_key="link", member=executor_for_content
+        ):
+            url_match = _URL_RE.search(message.content)
+            if url_match:
+                domain = _extract_domain(url_match.group(0))
+                whitelist_domains = {d.lower() for d in config.get("link_whitelist", [])}
+                if domain and domain not in whitelist_domains:
+                    try:
+                        await message.delete()
+                    except (discord.Forbidden, discord.HTTPException):
+                        pass
+                    punishment_here = _resolve_punishment(config, "link")
+                    asyncio.create_task(_punish(guild, executor_for_content, punishment_here))
+                    asyncio.create_task(send_log(
+                        guild,
+                        action=punishment_here,
+                        punishment=punishment_here,
+                        target=executor_for_content,
+                        moderator=guild.me,
+                        reason=f"Compartió un link no autorizado (`{domain}`)",
+                        module="Anti-Link",
+                        category="messages",
+                        channel_override=_resolve_module_log_channel(guild, config, "link"),
+                    ))
+                    return
+
+        # ── ANTI-SPAM: flood de mensajes ────────────────────────────────────────
+        if executor_for_content and an.get("anti_spam", True) and not _is_whitelisted(
+            guild.id, executor_for_content.id, self.bot.owner_ids, module_key="spam", member=executor_for_content
+        ):
+            threshold = an.get("spam_threshold", 6)
+            window = an.get("spam_window", 5)
+            hit = _check_rate(guild.id, executor_for_content.id, "spam_msg", threshold, window)
+            if hit:
+                punishment_here = _resolve_punishment(config, "spam")
+                asyncio.create_task(_punish(guild, executor_for_content, punishment_here))
+                asyncio.create_task(send_log(
+                    guild,
+                    action=punishment_here,
+                    punishment=punishment_here,
+                    target=executor_for_content,
+                    moderator=guild.me,
+                    reason=f"Envió {threshold}+ mensajes en {window}s (spam)",
+                    module="Anti-Spam",
+                    category="messages",
+                    channel_override=_resolve_module_log_channel(guild, config, "spam"),
+                ))
+                try:
+                    cutoff = datetime.now(timezone.utc) - timedelta(seconds=window + 2)
+                    await message.channel.purge(
+                        limit=50,
+                        check=lambda m: m.author.id == executor_for_content.id,
+                        after=cutoff,
+                    )
+                except (discord.Forbidden, discord.HTTPException):
+                    pass
+                return
+
         # Anti-everyone mention
         if an.get("anti_everyone_mention", True):
             if message.mention_everyone:
@@ -740,6 +945,51 @@ class AntiNuke(commands.Cog):
 
         if not an.get("enabled", False):
             return
+
+        # ── ANTI-RAID: oleada de joins ────────────────────────────────────────
+        if an.get("anti_raid", True):
+            threshold = an.get("raid_threshold", 6)
+            window = an.get("raid_window", 10)
+            hit = _check_rate(guild.id, 0, "raid_join", threshold, window)
+
+            if hit and not _in_raid_mode(guild.id):
+                lockdown_minutes = an.get("raid_lockdown_minutes", 10)
+                asyncio.create_task(_enter_raid_mode(guild, lockdown_minutes))
+                asyncio.create_task(send_log(
+                    guild,
+                    action="lockdown",
+                    punishment="lockdown",
+                    target=guild.me,
+                    moderator=guild.me,
+                    reason=f"Se detectaron {threshold}+ ingresos en {window}s — posible raid",
+                    module="Anti-Raid",
+                    category="members",
+                    extra_fields=[("Lockdown", f"`{lockdown_minutes} minutos`", True)],
+                ))
+
+            if _in_raid_mode(guild.id):
+                punishment_here = _resolve_punishment(config, "raid")
+                if punishment_here not in ("ban", "kick"):
+                    punishment_here = "kick"
+                try:
+                    if punishment_here == "ban":
+                        await guild.ban(member, reason="AntiNuke: raid en curso", delete_message_days=0)
+                    else:
+                        await guild.kick(member, reason="AntiNuke: raid en curso")
+                    asyncio.create_task(send_log(
+                        guild,
+                        action=punishment_here,
+                        punishment=punishment_here,
+                        target=member,
+                        moderator=guild.me,
+                        reason="Ingresó al servidor mientras el modo raid estaba activo",
+                        module="Anti-Raid",
+                        category="members",
+                        channel_override=_resolve_module_log_channel(guild, config, "raid"),
+                    ))
+                except (discord.Forbidden, discord.HTTPException):
+                    pass
+                return  # no seguir evaluando bot-add / edad de cuenta para un raider ya expulsado
 
         if member.bot and an.get("anti_bot_add", True):
             executor = await _get_executor_with_retry(guild, discord.AuditLogAction.bot_add)
