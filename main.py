@@ -85,6 +85,7 @@ class AntiNukeBot(commands.Bot):
             "autoresponder",
             "snipe",
             "premium",
+            "emoji_manager",
         ]
         for cog in cogs:
             try:
@@ -143,9 +144,11 @@ class AntiNukeBot(commands.Bot):
         if isinstance(error, commands.CommandNotFound):
             return
         if isinstance(error, commands.MissingPermissions):
+            from emojis import REMOVE
+            perms = ", ".join(f"`{p}`" for p in error.missing_permissions)
             await ctx.send(embed=discord.Embed(
-                description="No tienes permisos suficientes.",
-                color=0x2b2d31
+                description=f"{REMOVE} {ctx.author.mention}: Necesitás el permiso {perms} para usar este comando.",
+                color=0xed4245,
             ))
         elif isinstance(error, commands.NotOwner):
             await ctx.send(embed=discord.Embed(
