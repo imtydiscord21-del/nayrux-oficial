@@ -23,8 +23,14 @@ def is_bot_or_guild_owner():
 
 
 async def _fetch_bytes(url: str) -> bytes:
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url) as resp:
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        )
+    }
+    async with aiohttp.ClientSession(headers=headers) as session:
+        async with session.get(url, allow_redirects=True) as resp:
             if resp.status != 200:
                 raise ValueError(f"No pude descargar esa imagen (HTTP {resp.status}).")
             return await resp.read()
