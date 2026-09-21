@@ -393,23 +393,53 @@ class Settings(commands.Cog):
         view = ModuleConfigView(self.bot, module_key)
         await ctx.send(embed=embed, view=view)
 
+    @commands.command(name="antiraid")
+    @is_manager()
+    async def antiraid_shortcut(self, ctx):
+        """Atajo: abre directo el panel de Anti-Raid."""
+        await self._open_module_panel(ctx, "raid")
+
+    @commands.command(name="antispam")
+    @is_manager()
+    async def antispam_shortcut(self, ctx):
+        """Atajo: abre directo el panel de Anti-Spam."""
+        await self._open_module_panel(ctx, "spam")
+
+    @commands.command(name="antilink")
+    @is_manager()
+    async def antilink_shortcut(self, ctx):
+        """Atajo: abre directo el panel de Anti-Link."""
+        await self._open_module_panel(ctx, "link")
+
+    @commands.command(name="antiinvite")
+    @is_manager()
+    async def antiinvite_shortcut(self, ctx):
+        """Atajo: abre directo el panel de Anti-Invite."""
+        await self._open_module_panel(ctx, "invite")
+
     @commands.command(name="antibot")
     @is_manager()
-    async def antibot(self, ctx):
-        """Atajo a ,antinuke module botadd — protección contra bots agregados sin autorización."""
+    async def antibot_shortcut(self, ctx):
+        """Atajo: abre directo el panel de Anti-Bot-Add."""
         await self._open_module_panel(ctx, "botadd")
 
     @commands.command(name="antiwebhook")
     @is_manager()
-    async def antiwebhook(self, ctx):
-        """Atajo a ,antinuke module webhook — protección contra webhooks creados sin autorización."""
+    async def antiwebhook_shortcut(self, ctx):
+        """Atajo: abre directo el panel de Anti-Webhook."""
         await self._open_module_panel(ctx, "webhook")
 
     @commands.command(name="antimention")
     @is_manager()
-    async def antimention(self, ctx):
-        """Atajo a ,antinuke module mention — protección contra spam de menciones."""
+    async def antimention_shortcut(self, ctx):
+        """Atajo: abre directo el panel de Anti-Mention."""
         await self._open_module_panel(ctx, "mention")
+
+    @commands.command(name="antitoken")
+    @is_manager()
+    async def antitoken_shortcut(self, ctx):
+        """Atajo: abre directo el panel de Anti-Token."""
+        await self._open_module_panel(ctx, "token")
 
     @antinuke.command(name="accountage", aliases=["acctage"])
     @is_manager()
