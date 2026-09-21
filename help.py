@@ -5,7 +5,7 @@ import logging
 
 log = logging.getLogger("antinuke.help")
 
-SUPPORT_SERVER_URL = "https://discord.gg/hMJ3wWzkFF"
+SUPPORT_SERVER_URL = "https://discord.gg/SQEATzU7HF"
 BRAND_ICON_URL = "https://i.pinimg.com/736x/78/ab/07/78ab072e66ef17fe638524e9a072cc74.jpg"  # ya no se usa como thumbnail del help (ahora usa el ícono del server)
 
 # ── Tabla de comandos ──────────────────────────────────────────────────────
@@ -62,28 +62,33 @@ CATEGORIES = {
             ], "`,roblox value` usa un servicio no oficial (Rolimons) y puede fallar sin aviso."),
         ],
     },
-    "antinuke": {
-        "label": "AntiNuke",
-        "description": "Motor de protección principal — activa, desactiva y ajusta cada módulo.",
+    "security": {
+        "label": "Security",
+        "description": "Protegé tu servidor de raids, nukes, spam y links maliciosos.",
         "sections": [
-            ("AntiNuke", [
-                ",antinuke enable",
-                ",antinuke disable",
+            ("Anti Modules", [
+                ",antinuke",
+                ",antiraid",
+                ",antispam",
+                ",antilink",
+                ",antiinvite",
+                ",antibot",
+                ",antiwebhook",
+                ",antimention",
+                ",antitoken",
+                ",whitelist",
+            ], "Cada comando abre el panel de configuración de ese módulo: activar/desactivar, castigo, canal de logs, threshold y whitelist propios."),
+            ("Configuración Avanzada", [
+                ",antinuke enable / disable",
                 ",antinuke status",
-                ",antinuke punishment <ban|kick|strip|mute>",
-                ",antinuke module <nombre>",
                 ",antinuke modules",
-                ",antinuke module <nombre> <on|off>",
+                ",antinuke punishment <ban|kick|strip|mute>",
                 ",antinuke threshold <módulo> <n>",
                 ",antinuke window <módulo> <segundos>",
                 ",antinuke accountage <días>",
                 ",antinuke guildage <días>",
                 ",antinuke reset",
             ], None),
-            ("Módulos", [
-                "ban", "kick", "channeldelete", "channelcreate", "roledelete", "rolecreate",
-                "webhook", "mention", "emojidelete", "botadd", "everyone", "serverupdate", "prune", "roleperm",
-            ], "Usa `,antinuke module <nombre>` (sin más nada) para abrir el panel de configuración de ese módulo: castigo, canal de logs y whitelist propios. O usa `,antinuke module <nombre> <on|off>` para activarlo/desactivarlo directo."),
         ],
     },
     "moderacion": {
@@ -257,47 +262,85 @@ CATEGORIES = {
             ], "Sintaxis: `{embed}$v{title: ...}$v{description: ...}$v{color: #hex}$v{field: nombre && valor && inline}`\nVariables: `{user.mention}` `{user.tag}` `{guild.name}` `{guild.count}` `{channel.mention}`"),
         ],
     },
-    "utilidades": {
-        "label": "Utilities",
-        "description": "Información de servidor, usuarios, roles, canales, mensajes e invitaciones.",
+    "information": {
+        "label": "Information",
+        "description": "Ver información detallada de servidor, usuarios, roles y canales.",
         "sections": [
-            ("Information", [
-                ",ping",
-                ",uptime",
-                ",botinfo",
+            ("Server", [
                 ",serverinfo",
                 ",servericon",
                 ",serverbanner",
-                ",userinfo",
-                ",avatar",
-                ",banner",
                 ",membercount",
-                ",roleinfo",
-                ",roles",
-                ",channelinfo",
-                ",inviteinfo",
                 ",boosts",
                 ",boosters",
                 ",owner",
-                ",permissions",
+                ",roles",
+            ], None),
+            ("User", [
+                ",userinfo",
+                ",avatar",
+                ",banner",
+                ",spotify",
+                ",voiceinfo",
+                ",displayname",
+            ], None),
+            ("Channel & Role", [
+                ",channelinfo",
+                ",roleinfo",
+            ], None),
+            ("Bot", [
+                ",ping",
+                ",uptime",
+                ",botinfo",
+                ",inviteinfo",
+            ], None),
+            ("Utility", [
                 ",snowflake",
                 ",id",
                 ",colorinfo",
                 ",position",
                 ",created",
                 ",joined",
+            ], None),
+            ("Messages", [
                 ",firstmessage",
                 ",lastmessage",
                 ",messageinfo",
-                ",displayname",
-                ",spotify",
-                ",voiceinfo",
-                ",list",
-                ",auditlogs",
-                ",vanityinfo",
                 ",snipe / ,s",
                 ",editsnipe / ,es",
             ], None),
+            ("Lookup", [
+                ",vanityinfo",
+                ",permissions",
+                ",auditlogs",
+                ",list",
+            ], None),
+        ],
+    },
+    "emoji": {
+        "label": "Emoji Commands",
+        "description": "Administrá y organizá los emojis del servidor.",
+        "sections": [
+            ("Info & Search", [
+                ",emoji <emoji>",
+                ",emojilist",
+                ",emojisearch <texto>",
+                ",emojistats",
+                ",bigemoji <emoji>",
+            ], None),
+            ("Management", [
+                ",steal <emoji>",
+                ",emojiadd <nombre> <url>",
+                ",deleteemoji <emoji>",
+                ",renameemoji <emoji> <nombre>",
+                ",copyemojis <emoji1> <emoji2> ...",
+            ], None),
+            ("Role Icon", [
+                ",roleicon <rol> <emoji|url>",
+                ",roleicon set <rol> <emoji|url>",
+                ",roleicon remove <rol>",
+                ",roleicon info <rol>",
+            ], "Necesita que el servidor tenga el boost/nivel suficiente para íconos de rol."),
         ],
     },
     "backup": {
@@ -333,13 +376,14 @@ CATEGORIES = {
 }
 
 ALIASES = {
-    "utilities": "utilidades", "utils": "utilidades", "utilidades": "utilidades", "info": "utilidades",
+    "utilities": "information", "utils": "information", "utilidades": "information", "info": "information",
     "roblox": "integrations", "rblx": "integrations", "integrations": "integrations", "integraciones": "integrations",
     "autorole": "automation", "autoreact": "automation", "autogreet": "automation",
     "automation": "automation", "automatizacion": "automation", "automatización": "automation",
     "mod": "moderacion", "moderation": "moderacion", "moderación": "moderacion",
     "jail": "moderacion", "lockdown": "moderacion", "unban": "moderacion",
-    "modules": "antinuke", "módulos": "antinuke", "modulos": "antinuke",
+    "antinuke": "security", "modules": "security", "módulos": "security", "modulos": "security",
+    "emojis": "emoji",
     "images": "imagenes", "imagedrop": "imagenes", "fotos": "imagenes",
     "log": "configuracion", "logs": "configuracion", "settings": "configuracion",
     "setup": "configuracion", "auto": "configuracion", "autoconfig": "configuracion", "autosetup": "configuracion",
@@ -365,12 +409,16 @@ def _total_commands() -> int:
     return sum(len(cmds) for data in CATEGORIES.values() for _, cmds, _ in data["sections"])
 
 
+def _bot_invite_url(bot: discord.Client) -> str:
+    return discord.utils.oauth_url(bot.user.id, permissions=discord.Permissions(administrator=True))
+
+
 def _build_overview_embed(bot: discord.Client, guild: discord.Guild, prefix: str) -> discord.Embed:
     e = discord.Embed(
         description=(
             f"**Prefix:** `{prefix}`\n"
             f"**Commands:** `{_total_commands()}` | **Categories:** `{len(CATEGORIES)}`\n\n"
-            f"[Support Server]({SUPPORT_SERVER_URL})\n\n"
+            f"[Support Server]({SUPPORT_SERVER_URL}) | [Bot Invite]({_bot_invite_url(bot)})\n\n"
             "Selecciona una categoría abajo para ver sus comandos."
         ),
         color=0x2b2d31,
@@ -391,7 +439,7 @@ def _build_category_embed(bot: discord.Client, guild: discord.Guild, cat_key: st
     if icon:
         e.set_thumbnail(url=icon)
 
-    parts = []
+    parts = [f"**Prefix:** `{prefix}`\n{data['description']}"]
     for subheader, cmds, note in data["sections"]:
         localized = [_localize(c, prefix) for c in cmds]
         block = "```\n" + "\n".join(localized) + "\n```"
@@ -405,43 +453,74 @@ def _build_category_embed(bot: discord.Client, guild: discord.Guild, cat_key: st
     return e
 
 
+HELP_TTL_SECONDS = 120
+
+
+CATEGORY_EMOJIS = {
+    "automation": "🤖",
+    "integrations": "🔗",
+    "security": "🔒",
+    "moderacion": "🛡️",
+    "configuracion": "⚙️",
+    "whitelist": "✅",
+    "voz": "🔊",
+    "bienvenidas": "👋",
+    "invitaciones": "📩",
+    "giveaways": "🎁",
+    "imagenes": "🖼️",
+    "autoresponder": "💬",
+    "embeds": "📝",
+    "information": "ℹ️",
+    "emoji": "😀",
+    "backup": "💾",
+    "premium": "⭐",
+}
+
+
 class CategorySelect(discord.ui.Select):
-    def __init__(self, bot: discord.Client, guild: discord.Guild, prefix: str):
+    def __init__(self, bot: discord.Client, guild: discord.Guild, prefix: str, view: "HelpView"):
         self.bot = bot
         self.guild = guild
         self.prefix = prefix
+        self.outer_view = view
         options = [
-            discord.SelectOption(label="Inicio", value="__home__", description="Volver al menú principal"),
+            discord.SelectOption(label="Inicio", value="__home__", description="Volver al menú principal", emoji="🏠"),
         ] + [
-            discord.SelectOption(label=data["label"], value=key, description=data["description"][:100])
+            discord.SelectOption(
+                label=data["label"], value=key, description=data["description"][:100],
+                emoji=CATEGORY_EMOJIS.get(key),
+            )
             for key, data in CATEGORIES.items()
         ]
         super().__init__(placeholder="Selecciona una categoría...", options=options)
 
     async def callback(self, interaction: discord.Interaction):
+        if self.outer_view.is_expired():
+            return await interaction.response.send_message(
+                embed=discord.Embed(description=f"Help menu expired. Run `{self.prefix}help` again.", color=0x2b2d31),
+                ephemeral=True,
+            )
         if self.values[0] == "__home__":
             embed = _build_overview_embed(self.bot, self.guild, self.prefix)
         else:
             embed = _build_category_embed(self.bot, self.guild, self.values[0], self.prefix)
-        await interaction.response.edit_message(embed=embed, view=self.view)
+        await interaction.response.edit_message(embed=embed, view=self.outer_view)
 
 
 class HelpView(discord.ui.View):
     def __init__(self, bot: discord.Client, guild: discord.Guild, prefix: str):
-        super().__init__(timeout=120)
+        super().__init__(timeout=None)  # el "timeout" real lo maneja is_expired(), no discord.py
         self.bot = bot
+        self.prefix = prefix
+        self.created_at = discord.utils.utcnow()
         self.message: discord.Message | None = None
-        self.add_item(CategorySelect(bot, guild, prefix))
+        self.add_item(CategorySelect(bot, guild, prefix, self))
         self.add_item(discord.ui.Button(label="Support Server", url=SUPPORT_SERVER_URL, style=discord.ButtonStyle.link))
+        self.add_item(discord.ui.Button(label="Bot Invite", url=_bot_invite_url(bot), style=discord.ButtonStyle.link))
 
-    async def on_timeout(self):
-        if self.message is None:
-            return
-        e = discord.Embed(description="Menú de ayuda expirado.", color=0x2b2d31)
-        try:
-            await self.message.edit(embed=e, view=None)
-        except discord.HTTPException:
-            pass
+    def is_expired(self) -> bool:
+        return (discord.utils.utcnow() - self.created_at).total_seconds() > HELP_TTL_SECONDS
+
 
 
 class Help(commands.Cog):
