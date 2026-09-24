@@ -456,24 +456,26 @@ def _build_category_embed(bot: discord.Client, guild: discord.Guild, cat_key: st
 HELP_TTL_SECONDS = 120
 
 
+HOME_EMOJI = discord.PartialEmoji(name="home", id=1552752918879408208)
+
 CATEGORY_EMOJIS = {
-    "automation": "🤖",
-    "integrations": "🔗",
-    "security": "🔒",
-    "moderacion": "🛡️",
-    "configuracion": "⚙️",
-    "whitelist": "✅",
-    "voz": "🔊",
-    "bienvenidas": "👋",
-    "invitaciones": "📩",
-    "giveaways": "🎁",
-    "imagenes": "🖼️",
-    "autoresponder": "💬",
-    "embeds": "📝",
-    "information": "ℹ️",
-    "emoji": "😀",
-    "backup": "💾",
-    "premium": "⭐",
+    "automation": discord.PartialEmoji(name="automation", id=1552752811232600064),
+    "integrations": discord.PartialEmoji(name="integrations", id=1552752969655656538),
+    "security": discord.PartialEmoji(name="security", id=1552753042091151450),
+    "moderacion": discord.PartialEmoji(name="moderacion", id=1552753013481939005),
+    "configuracion": discord.PartialEmoji(name="configuracion", id=1552752857420406905),
+    "whitelist": discord.PartialEmoji(name="whitelist", id=1552753068431515709),
+    "voz": discord.PartialEmoji(name="voz", id=1552753057924780072),
+    "bienvenidas": discord.PartialEmoji(name="bienvenidas", id=1552752845365714965),
+    "invitaciones": discord.PartialEmoji(name="invitaciones", id=1552752989264158843),
+    "giveaways": discord.PartialEmoji(name="giveaways", id=1552752905906425856),
+    "imagenes": discord.PartialEmoji(name="imagenes", id=1552752937527410830),
+    "autoresponder": discord.PartialEmoji(name="autoresponder", id=1552752822099906630),
+    "embeds": discord.PartialEmoji(name="embeds", id=1552752870938640574),
+    "information": discord.PartialEmoji(name="information", id=1552752951137927198),
+    "emoji": discord.PartialEmoji(name="emoji", id=1552752889796108308),
+    "backup": discord.PartialEmoji(name="backup", id=1552752833856806922),
+    "premium": discord.PartialEmoji(name="premium", id=1552753026563973150),
 }
 
 
@@ -484,7 +486,7 @@ class CategorySelect(discord.ui.Select):
         self.prefix = prefix
         self.outer_view = view
         options = [
-            discord.SelectOption(label="Inicio", value="__home__", description="Volver al menú principal", emoji="🏠"),
+            discord.SelectOption(label="Inicio", value="__home__", description="Volver al menú principal", emoji=HOME_EMOJI),
         ] + [
             discord.SelectOption(
                 label=data["label"], value=key, description=data["description"][:100],
