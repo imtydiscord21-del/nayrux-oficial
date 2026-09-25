@@ -86,6 +86,7 @@ class AntiNukeBot(commands.Bot):
             "snipe",
             "premium",
             "emoji_manager",
+            "uid_tracker",
         ]
         for cog in cogs:
             try:
@@ -124,9 +125,9 @@ class AntiNukeBot(commands.Bot):
     @tasks.loop(seconds=20)
     async def rotate_status(self):
         statuses = [
-            (discord.ActivityType.watching, ",help | nayrux.com"),
+            (discord.ActivityType.watching, "nayrux.com"),
             (discord.ActivityType.watching, f"{len(self.guilds)} servidores"),
-            (discord.ActivityType.playing, ",help"),
+            (discord.ActivityType.playing, "Mencióname para ver mis comandos"),
             (discord.ActivityType.competing, "seguridad de servidores"),
         ]
         activity_type, name = statuses[self._status_index % len(statuses)]
