@@ -2,7 +2,7 @@
 uid_tracker.py — Historial de usuario: nombres, avatares y detección de Nitro.
 
 Escucha on_user_update (evento global, no por servidor — el username y avatar
-de Discord son de la cuenta, no del server) y va guardando cada cambio. El
+de Discord son de la cuenta, no del server) y va guardando c cadaambio. El
 comando ,uid muestra un panel con 3 vistas: Ficha, Nombres, Avatares.
 
 Limitaciones honestas:
@@ -42,9 +42,11 @@ class UidTracker(commands.Cog):
         data = db.get_user(after.id)
         changed = False
 
-        if before.name != after.name:
+        before_display = before.global_name or before.name
+        after_display = after.global_name or after.name
+        if before_display != after_display:
             data.setdefault("usernames", []).append({
-                "name": after.name,
+                "name": after_display,
                 "at": datetime.now(timezone.utc).isoformat(),
             })
             changed = True
@@ -68,7 +70,7 @@ class UidTracker(commands.Cog):
         # primera vez que vemos a este usuario: sembrar el historial con lo que ya tiene
         data = db.get_user(member.id)
         if not data.get("usernames"):
-            data["usernames"] = [{"name": member.name, "at": datetime.now(timezone.utc).isoformat()}]
+            data["usernames"] = [{"name": member.global_name or member.name, "at": datetime.now(timezone.utc).isoformat()}]
         if not data.get("avatars"):
             data["avatars"] = [{"url": member.display_avatar.url, "at": datetime.now(timezone.utc).isoformat()}]
         if not data.get("nitro_detected_at") and _has_nitro_indicators(member):
@@ -231,7 +233,7 @@ class UidView(discord.ui.View):
 
     def build_ficha(self) -> discord.Embed:
         m = self.member
-        e = discord.Embed(title=str(m), color=m.color if m.color.value else 0x2b2d31)
+        e = discord.Embed(title=m.display_name, color=m.color if m.color.value else 0x2b2d31)
         e.set_thumbnail(url=m.display_avatar.url)
 
         e.add_field(name="Nitro", value=f"Detectado {_rel(self.data.get('nitro_detected_at'))}", inline=False)
@@ -258,7 +260,7 @@ class UidView(discord.ui.View):
         start = self.names_page * NAMES_PAGE_SIZE
         page_items = history[start:start + NAMES_PAGE_SIZE]
 
-        e = discord.Embed(title=f"Historial de nombres de {self.member}", color=0x2b2d31)
+        e = discord.Embed(title=f"Historial de nombres de {self.member.display_name}", color=0x2b2d31)
         if not history:
             e.description = "Sin cambios de nombre registrados todavía."
         else:
@@ -273,7 +275,7 @@ class UidView(discord.ui.View):
         start = self.avatars_page * AVATARS_PAGE_SIZE
         page_items = history[start:start + AVATARS_PAGE_SIZE]
 
-        e = discord.Embed(title=f"Historial de avatares de {self.member}", color=0x2b2d31)
+        e = discord.Embed(title=f"Historial de avatares de {self.member.display_name}", color=0x2b2d31)
         e.set_footer(text=f"Página {self.avatars_page + 1}/{total_pages} ({len(history)} registros)")
 
         if not page_items:
@@ -316,7 +318,7 @@ class UidView(discord.ui.View):
         buf = io.BytesIO()
         canvas.save(buf, format="PNG")
         buf.seek(0)
-        return buf 
+        return buf
 
 
 async def setup(bot: commands.Bot):
