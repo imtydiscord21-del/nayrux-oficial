@@ -6,6 +6,7 @@ DEFAULT_PREFIX = ","
 _client = MongoClient(os.getenv("MONGO_URI"))
 _db = _client["bot2"]
 _guilds = _db["guilds"]
+_users = _db["users"]
 
 
 def default_guild_config() -> dict:
@@ -74,6 +75,7 @@ def default_guild_config() -> dict:
             "anti_token": True,
         },
         "link_whitelist": [],
+        "bot_persona": {"name": None, "avatar_url": None},
         "module_settings": {
             "link": {"punishment": "mute"},
             "invite": {"punishment": "mute"},
@@ -109,6 +111,25 @@ class Database:
         _guilds.replace_one(
             {"_id": str(guild_id)},
             {"_id": str(guild_id), **config},
+            upsert=True,
+        )
+
+    def get_user(self, user_id: int) -> dict:
+        """Historial global (no por servidor) de nombres/avatares/nitro de un usuario."""
+        doc = _users.find_one({"_id": str(user_id)})
+        if doc:
+            doc.pop("_id", None)
+            return doc
+
+        default = {"usernames": [], "avatars": [], "nitro_detected_at": None}
+        _users.insert_one({"_id": str(user_id), **default})
+        return default
+
+    def update_user(self, user_id: int, data: dict):
+        data.pop("_id", None)
+        _users.replace_one(
+            {"_id": str(user_id)},
+            {"_id": str(user_id), **data},
             upsert=True,
         )
 
