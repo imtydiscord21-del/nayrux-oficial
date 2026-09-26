@@ -534,6 +534,9 @@ class Moderation(commands.Cog):
     @commands.has_permissions(manage_roles=True)
     @commands.bot_has_permissions(manage_roles=True)
     async def role_remove(self, ctx: commands.Context, member: discord.Member, role: discord.Role):
+        await self._role_remove(ctx, member, role)
+
+    async def _role_remove(self, ctx: commands.Context, member: discord.Member, role: discord.Role):
         if role >= ctx.guild.me.top_role:
             return await ctx.send(embed=discord.Embed(description="Ese rol está por encima del mío, no puedo quitarlo.", color=0xed4245))
         if ctx.author.id != ctx.guild.owner_id and role >= ctx.author.top_role:
@@ -544,6 +547,16 @@ class Moderation(commands.Cog):
             description=f"{REMOVE} {ctx.author.mention}: Removed {role.mention} from {member.mention}",
             color=discord.Color.blurple(),
         ))
+
+    @commands.command(name="r")
+    @commands.has_permissions(manage_roles=True)
+    @commands.bot_has_permissions(manage_roles=True)
+    async def toggle_role(self, ctx: commands.Context, member: discord.Member, *, role: discord.Role):
+        """Atajo rápido: ,r @usuario @rol (o nombre del rol) — agrega el rol si no lo tiene, lo quita si ya lo tiene."""
+        if role in member.roles:
+            await self._role_remove(ctx, member, role)
+        else:
+            await self._role_add(ctx, member, role)
 
     @role.command(name="info")
     async def role_info(self, ctx: commands.Context, *, role: discord.Role):
