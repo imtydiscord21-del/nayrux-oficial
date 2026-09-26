@@ -112,6 +112,7 @@ CATEGORIES = {
                 ",nick <usuario> <apodo|reset>",
                 ",role add <usuario> <rol>",
                 ",role remove <usuario> <rol>",
+                ",r <usuario> <rol> — atajo: agrega si no lo tiene, quita si ya lo tiene",
                 ",modlogs <usuario>",
             ], None),
             ("Jail", [
@@ -307,6 +308,7 @@ CATEGORIES = {
                 ",lastmessage",
                 ",messageinfo",
                 ",snipe / ,s",
+                ",cs (borra el snipe guardado de este canal)",
                 ",editsnipe / ,es",
             ], None),
             ("Lookup", [
@@ -358,12 +360,14 @@ CATEGORIES = {
         "label": "Premium",
         "description": "Exclusivo para el dueño del bot y el dueño del servidor.",
         "sections": [
-            ("Perfil del Bot", [
+            ("Perfil del Bot EN ESTE SERVIDOR", [
                 ",changeavatar <url>",
-                ",changebanner <url>",
                 ",changename <nombre>",
                 ",resetprofile",
-            ], None),
+            ], "Solo cambia cómo se ve el bot cuando manda mensajes en este servidor (vía webhook) — no toca la cuenta real."),
+            ("Perfil del Bot GLOBAL", [
+                ",changebanner <url>",
+            ], "Este sí cambia la cuenta real, se ve igual en todos los servidores (los webhooks no soportan banner)."),
             ("Perfil del Servidor", [
                 ",guildicon <url>",
                 ",guildbanner <url>",
