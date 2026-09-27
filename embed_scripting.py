@@ -8,7 +8,7 @@ Sintaxis:
   $v{author: texto && url_icono}$v{footer: texto && url_icono}
   $v{thumbnail: url}$v{image: url}
   $v{field: nombre && valor && inline}   (repetible)
-  $v{button: url && texto && emoji && enabled}   (repetible)
+  $v{button: url && texto && emoji}   (repetible — el emoji es opcional)
   $v{message: texto fuera del embed}
   $v{timestamp: true}
 
@@ -105,8 +105,7 @@ def parse_code(text: str) -> dict:
             url = parts[0] if len(parts) > 0 else ""
             label = parts[1] if len(parts) > 1 else "Click"
             emoji = parts[2] if len(parts) > 2 and parts[2] else None
-            enabled = "enabled" in value.lower()
-            if enabled and url:
+            if url:
                 result["buttons"].append({"url": url, "label": label, "emoji": emoji})
         elif key == "field":
             parts = [p.strip() for p in value.split("&&")]
