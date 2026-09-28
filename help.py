@@ -225,7 +225,7 @@ CATEGORIES = {
     },
     "imagenes": {
         "label": "Reenvío de Imágenes",
-        "description": "Manda links de fotos/gifs por DM al bot y elige con botones a cuál canal reenviarlos.",
+        "description": "Mandale al bot links, fotos adjuntas, o mensajes reenviados (Forward) por DM, y elige a cuál canal van.",
         "sections": [
             ("Canales y Acceso", [
                 ",addpostchannel <nombre> <#canal>",
@@ -236,9 +236,12 @@ CATEGORIES = {
                 ",posters",
             ], None),
             ("Uso", [
-                ",post <link1> <link2> ...",
-                ",preview",
-            ], None),
+                ",post <link1> <link2> ... [+ adjuntos]",
+            ], (
+                "Por DM también podés mandar varias fotos/links seguidos (o reenviar mensajes con Forward) — "
+                "el bot espera unos segundos a que termines, junta todo en una sola tanda (hasta 40 cosas) "
+                "y te pregunta el canal una sola vez. Sube los archivos de a 10 por mensaje."
+            )),
         ],
     },
     "autoresponder": {
