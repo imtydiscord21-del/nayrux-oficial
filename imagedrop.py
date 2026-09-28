@@ -1,8 +1,12 @@
 """
-imagedrop.py — Manda fotos/gifs (ej. links de Pinterest) O archivos/fotos
-adjuntos directamente, por DM al bot, y elige con botones a cuál canal
-reenviarlos. Puedes tener varios canales nombrados (ej. "pfp", "banners",
-"aesthetic") y el bot te pregunta cuál usar cada vez.
+imagedrop.py — Manda fotos/gifs (ej. links de Pinterest), archivos/fotos
+adjuntos, O mensajes REENVIADOS (botón Forward de Discord), por DM al bot, y
+elige con botones a cuál canal reenviarlos. Puedes tener varios canales
+nombrados (ej. "pfp", "banners", "aesthetic") y el bot te pregunta cuál usar.
+
+Si mandas/reenvías muchas fotos seguidas, el bot espera unos segundos a que
+termines, las junta todas (hasta MAX_ITEMS) y te pregunta el canal UNA sola vez.
+Las sube de a 10 archivos por mensaje (límite de Discord).
 
 Comandos (dentro del servidor):
   ,addpostchannel <nombre> <#canal>    — agrega/actualiza un canal de destino (manage_guild)
@@ -10,13 +14,12 @@ Comandos (dentro del servidor):
   ,postchannels                        — lista los canales configurados
   ,posters add/remove/list <@usuario>  — quién más puede usar esto por DM,
                                           además de quien tenga manage_guild (manage_guild)
-  ,post [links] [+ adjuntos]           — postea hasta 5 (links y/o archivos, combinados)
-                                          desde el server (te pregunta el canal)
+  ,post [links] [+ adjuntos]           — postea links y/o archivos desde el server
+                                          (te pregunta el canal)
 
 Uso por DM:
-  Mándale al bot un mensaje privado con hasta 5 links, o adjunta hasta 5
-  fotos/archivos directamente (o combina ambos), y te pregunta con botones
-  a cuál canal mandarlos.
+  Mándale al bot links, adjunta fotos/archivos o reenvíale mensajes con
+  Forward (o combina todo), y te pregunta con botones a cuál canal mandarlos.
 """
 
 import discord
@@ -24,14 +27,15 @@ from discord.ext import commands
 from config import db
 from webhook_utils import send_via_webhook
 import re
-import io
+import asyncio
 import logging
 import aiohttp
 
 log = logging.getLogger("antinuke.imagedrop")
 
 URL_RE = re.compile(r"https?://\S+")
-MAX_ITEMS = 5
+MAX_ITEMS = 40          # tope de fotos/links por tanda
+BATCH_WINDOW = 3        # segundos de silencio antes de preguntar el canal
 BUTTON_TIMEOUT = 120
 DIRECT_IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".gif", ".webp")
 _META_OG_IMAGE_RE = re.compile(r'<meta[^>]+(?:property|name)=["\']og:image["\'][^>]*>', re.IGNORECASE)
@@ -39,10 +43,21 @@ _CONTENT_ATTR_RE = re.compile(r'content=["\']([^"\']+)["\']', re.IGNORECASE)
 
 
 def _extract_items(message: discord.Message) -> list[dict]:
-    """Junta links de texto + archivos/fotos adjuntos, hasta MAX_ITEMS en total."""
+    """Junta links + archivos adjuntos de un mensaje, incluyendo los de mensajes
+    REENVIADOS con Forward: esos no vienen en message.attachments, sino dentro de
+    message.message_snapshots. No aplica tope aquí (lo aplica quien llama)."""
     items = [{"type": "link", "value": url} for url in URL_RE.findall(message.content)]
     items += [{"type": "attachment", "value": att} for att in message.attachments]
-    return items[:MAX_ITEMS]
+
+    for snap in getattr(message, "message_snapshots", None) or []:
+        snap_links = URL_RE.findall(snap.content or "")
+        items += [{"type": "link", "value": url} for url in snap_links]
+        items += [{"type": "attachment", "value": att} for att in snap.attachments]
+        if not snap_links:  # reenvío de un embed con imagen (sin link en el texto)
+            for embed in snap.embeds:
+                if embed.image and embed.image.url:
+                    items.append({"type": "link", "value": embed.image.url})
+    return items
 
 
 async def _resolve_image_url(session: aiohttp.ClientSession, url: str) -> str | None:
@@ -68,31 +83,74 @@ async def _resolve_image_url(session: aiohttp.ClientSession, url: str) -> str | 
     return content_match.group(1) if content_match else None
 
 
-async def _build_payload(items: list[dict]) -> tuple[list[discord.Embed], list[discord.File]]:
-    """Convierte los links en embeds de solo-imagen (sin texto visible del link)
-    y los adjuntos en discord.File para reenviarlos tal cual."""
-    embeds = []
-    files = []
+def _chunk_attachments(atts: list[discord.Attachment], limit: int) -> list[list[discord.Attachment]]:
+    """Agrupa adjuntos en tandas de máx. 10 archivos (límite de Discord por
+    mensaje) sin pasarse del peso máximo que acepta el servidor destino."""
+    chunks, current, size = [], [], 0
+    for att in atts:
+        if current and (len(current) >= 10 or size + att.size > limit):
+            chunks.append(current)
+            current, size = [], 0
+        current.append(att)
+        size += att.size
+    if current:
+        chunks.append(current)
+    return chunks
 
-    link_items = [it["value"] for it in items if it["type"] == "link"]
-    if link_items:
+
+async def _send_items(channel: discord.TextChannel, items: list[dict]) -> tuple[int, int]:
+    """Sube todo al canal. Devuelve (enviados, omitidos). Los links salen como
+    embeds de solo-imagen (de a 10 por mensaje) y los archivos se re-suben tal
+    cual, de a 10 por mensaje. Lee los archivos de a una tanda para no llenar
+    la memoria con 40 fotos a la vez."""
+    limit = channel.guild.filesize_limit
+    sent = skipped = 0
+
+    link_urls = [it["value"] for it in items if it["type"] == "link"]
+    if link_urls:
+        embeds = []
         async with aiohttp.ClientSession() as session:
-            for url in link_items:
+            for url in link_urls:
                 resolved = await _resolve_image_url(session, url)
                 embed = discord.Embed()
                 embed.set_image(url=resolved or url)
                 embeds.append(embed)
-
-    for it in items:
-        if it["type"] == "attachment":
-            att: discord.Attachment = it["value"]
+        for i in range(0, len(embeds), 10):
+            group = embeds[i:i + 10]
             try:
-                data = await att.read()
-                files.append(discord.File(io.BytesIO(data), filename=att.filename))
+                await send_via_webhook(channel, embeds=group)
+                sent += len(group)
+            except discord.HTTPException as e:
+                log.warning(f"No se pudo postear links en {channel}: {e}")
+                skipped += len(group)
+
+    atts = []
+    for it in items:
+        if it["type"] != "attachment":
+            continue
+        if it["value"].size > limit:
+            skipped += 1  # más pesado de lo que acepta este servidor
+        else:
+            atts.append(it["value"])
+
+    for chunk in _chunk_attachments(atts, limit):
+        files = []
+        for att in chunk:
+            try:
+                files.append(await att.to_file())
             except (discord.HTTPException, discord.Forbidden) as e:
                 log.warning(f"No se pudo leer el adjunto {att.filename}: {e}")
+                skipped += 1
+        if not files:
+            continue
+        try:
+            await send_via_webhook(channel, files=files)
+            sent += len(files)
+        except discord.HTTPException as e:
+            log.warning(f"No se pudo postear archivos en {channel}: {e}")
+            skipped += len(files)
 
-    return embeds, files
+    return sent, skipped
 
 
 def _is_allowed(member: discord.Member, config: dict) -> bool:
@@ -128,28 +186,20 @@ class ChannelPickView(discord.ui.View):
                 return await interaction.response.send_message("Esto no es para ti.", ephemeral=True)
 
             await interaction.response.defer()
-            embeds, files = await _build_payload(self.items)
-            try:
-                kwargs = {}
-                if embeds:
-                    kwargs["embeds"] = embeds
-                if files:
-                    kwargs["files"] = files
-                await send_via_webhook(channel, **kwargs)
-            except (discord.Forbidden, discord.HTTPException) as e:
-                log.warning(f"No se pudo postear en {channel}: {e}")
+            sent, skipped = await _send_items(channel, self.items)
+            if sent == 0:
                 return await interaction.edit_original_response(
                     content=f"No pude mandar eso a {channel.mention}.", embed=None, view=None,
                 )
 
             for item in self.children:
                 item.disabled = True
+            desc = f"Mandé `{sent}` cosa(s) a {channel.mention}."
+            if skipped:
+                desc += f"\nNo pude mandar `{skipped}` (muy pesadas para este servidor, o fallaron)."
             await interaction.edit_original_response(
                 content=None,
-                embed=discord.Embed(
-                    description=f"Mandé `{len(self.items)}` cosa(s) a {channel.mention}.",
-                    color=0x57f287,
-                ),
+                embed=discord.Embed(description=desc, color=0x57f287),
                 view=self,
             )
             self.stop()
@@ -164,8 +214,10 @@ class ChannelPickView(discord.ui.View):
 class ImageDrop(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        # user_id -> {"items": [...], "dropped": int, "channel": DMChannel, "task": Task}
+        self._batches: dict[int, dict] = {}
 
-    # ── DM listener ──────────────────────────────────────────────────────────
+    # ── DM listener (junta varias fotos seguidas en una sola tanda) ──────────
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -176,10 +228,34 @@ class ImageDrop(commands.Cog):
         if not items:
             return
 
+        batch = self._batches.get(message.author.id)
+        if batch is None:
+            batch = {"items": [], "dropped": 0, "channel": message.channel, "task": None}
+            self._batches[message.author.id] = batch
+
+        room = max(MAX_ITEMS - len(batch["items"]), 0)
+        batch["items"].extend(items[:room])
+        batch["dropped"] += len(items) - min(len(items), room)
+
+        if batch["task"] is not None:
+            batch["task"].cancel()  # llegó otra foto: reinicia la espera
+        batch["task"] = asyncio.create_task(self._flush_after(message.author.id))
+
+    async def _flush_after(self, user_id: int):
+        try:
+            await asyncio.sleep(BATCH_WINDOW)
+        except asyncio.CancelledError:
+            return
+        batch = self._batches.pop(user_id, None)
+        if batch:
+            await self._prompt_channel(user_id, batch)
+
+    async def _prompt_channel(self, user_id: int, batch: dict):
+        items = batch["items"]
         options = []
-        multi_guild = len([g for g in self.bot.guilds if g.get_member(message.author.id)]) > 1
+        multi_guild = len([g for g in self.bot.guilds if g.get_member(user_id)]) > 1
         for guild in self.bot.guilds:
-            member = guild.get_member(message.author.id)
+            member = guild.get_member(user_id)
             if member is None:
                 continue
             config = db.get_guild(guild.id)
@@ -195,14 +271,12 @@ class ImageDrop(commands.Cog):
         if not options:
             return  # nadie configuró canales, o no tiene permiso — ignoramos en silencio
 
-        view = ChannelPickView(message.author.id, items, options)
-        await message.channel.send(
-            embed=discord.Embed(
-                description=f"¿A cuál canal mando esto (`{len(items)}` cosa(s))?",
-                color=0x2b2d31,
-            ),
-            view=view,
-        )
+        text = f"¿A cuál canal mando esto (`{len(items)}` cosa(s))?"
+        if batch["dropped"]:
+            text += f"\nEl tope por tanda es `{MAX_ITEMS}`, dejé afuera `{batch['dropped']}`."
+
+        view = ChannelPickView(user_id, items, options)
+        await batch["channel"].send(embed=discord.Embed(description=text, color=0x2b2d31), view=view)
 
     # ── Configuración de canales ─────────────────────────────────────────────
 
@@ -300,7 +374,7 @@ class ImageDrop(commands.Cog):
                 color=0xed4245,
             ))
 
-        items = _extract_items(ctx.message)
+        items = _extract_items(ctx.message)[:MAX_ITEMS]
         if not items:
             return await ctx.send(embed=discord.Embed(
                 description="Adjunta fotos/archivos y/o pon links junto con `,post`.",
