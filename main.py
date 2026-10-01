@@ -13,6 +13,25 @@ logging.basicConfig(
 )
 log = logging.getLogger("antinuke")
 
+# Descripciones/ejemplos curados para el mensaje de "falta un argumento" — el
+# resto de los comandos igual arma una tarjeta con Command + Syntax genéricos.
+COMMAND_INFO = {
+    "ban": {"desc": "Banea a un miembro del servidor.", "example": "ban @usuario spam en el chat"},
+    "kick": {"desc": "Expulsa a un miembro del servidor.", "example": "kick @usuario siendo tóxico"},
+    "jail": {"desc": "Aísla a un miembro quitándole el acceso a los canales.", "example": "jail @usuario revisando el caso"},
+    "timeout": {"desc": "Silencia a un miembro por un tiempo determinado.", "example": "timeout @usuario 10m spameando"},
+    "warn": {"desc": "Advierte a un miembro.", "example": "warn @usuario lenguaje inapropiado"},
+    "purge": {"desc": "Borra una cantidad de mensajes del canal.", "example": "purge 50"},
+    "role add": {"desc": "Agrega un rol a un miembro.", "example": "role add @usuario Miembro"},
+    "role remove": {"desc": "Quita un rol a un miembro.", "example": "role remove @usuario Miembro"},
+    "r": {"desc": "Agrega el rol si no lo tiene, lo quita si ya lo tiene.", "example": "r @usuario Miembro"},
+    "lock": {"desc": "Bloquea el canal actual (o el que indiques).", "example": "lock"},
+    "unlock": {"desc": "Desbloquea el canal.", "example": "unlock"},
+    "slowmode": {"desc": "Configura el modo lento del canal.", "example": "slowmode 10"},
+    "nickname": {"desc": "Cambia el apodo de un miembro.", "example": "nickname @usuario Nuevo Nombre"},
+    "unban": {"desc": "Desbanea a un usuario por su ID.", "example": "unban 123456789012345678"},
+}
+
 
 class WebhookContext(commands.Context):
     """Context que reenvía ctx.send() a través del webhook del bot.
@@ -87,6 +106,9 @@ class AntiNukeBot(commands.Bot):
             "premium",
             "emoji_manager",
             "uid_tracker",
+            "boost",
+            "vanity_watch",
+            "hardban",
         ]
         for cog in cogs:
             try:
@@ -157,10 +179,20 @@ class AntiNukeBot(commands.Bot):
                 color=0x2b2d31
             ))
         elif isinstance(error, commands.MissingRequiredArgument):
-            await ctx.send(embed=discord.Embed(
-                description=f"Argumento faltante: `{error.param.name}`",
-                color=0x2b2d31
-            ))
+            command = ctx.command
+            qualified = command.qualified_name
+            info = COMMAND_INFO.get(qualified, {})
+            syntax = f"{ctx.prefix}{qualified} {command.signature}".strip()
+
+            e = discord.Embed(
+                title=f"Command: {qualified}",
+                description=info.get("desc"),
+                color=0x2b2d31,
+            )
+            e.add_field(name="Syntax", value=f"`{syntax}`", inline=False)
+            if info.get("example"):
+                e.add_field(name="Example", value=f"`{ctx.prefix}{info['example']}`", inline=False)
+            await ctx.send(embed=e)
         else:
             log.error(f"Error en {ctx.command}: {error}")
             await ctx.send(embed=discord.Embed(
