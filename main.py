@@ -182,7 +182,8 @@ class AntiNukeBot(commands.Bot):
             command = ctx.command
             qualified = command.qualified_name
             info = COMMAND_INFO.get(qualified, {})
-            syntax = f"{ctx.prefix}{qualified} {command.signature}".strip()
+            params = " ".join(f"({name})" for name in command.clean_params)
+            syntax = f"{ctx.prefix}{qualified} {params}".strip()
 
             e = discord.Embed(
                 title=f"Command: {qualified}",
