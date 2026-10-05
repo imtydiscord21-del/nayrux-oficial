@@ -30,6 +30,7 @@ COMMAND_INFO = {
     "slowmode": {"desc": "Configura el modo lento del canal.", "example": "slowmode 10"},
     "nickname": {"desc": "Cambia el apodo de un miembro.", "example": "nickname @usuario Nuevo Nombre"},
     "unban": {"desc": "Desbanea a un usuario por su ID.", "example": "unban 123456789012345678"},
+    "hardban": {"desc": "Banea a un usuario y lo vuelve a banear solo si alguien lo desbanea. Usá el mismo comando de nuevo para sacarle el hardban.", "example": "hb 123456789012345678 haciendo alts"},
 }
 
 
@@ -105,10 +106,11 @@ class AntiNukeBot(commands.Bot):
             "snipe",
             "premium",
             "emoji_manager",
+            "hardban",
             "uid_tracker",
             "boost",
             "vanity_watch",
-            "hardban",
+            "changelog",
         ]
         for cog in cogs:
             try:
@@ -185,14 +187,19 @@ class AntiNukeBot(commands.Bot):
             params = " ".join(f"({name})" for name in command.clean_params)
             syntax = f"{ctx.prefix}{qualified} {params}".strip()
 
+            lines = []
+            if info.get("desc"):
+                lines.append(info["desc"])
+                lines.append("")
+            lines.append(f"Syntax: `{syntax}`")
+            if info.get("example"):
+                lines.append(f"Example: `{ctx.prefix}{info['example']}`")
+
             e = discord.Embed(
                 title=f"Command: {qualified}",
-                description=info.get("desc"),
+                description="\n".join(lines),
                 color=0x2b2d31,
             )
-            e.add_field(name="Syntax", value=f"`{syntax}`", inline=False)
-            if info.get("example"):
-                e.add_field(name="Example", value=f"`{ctx.prefix}{info['example']}`", inline=False)
             await ctx.send(embed=e)
         else:
             log.error(f"Error en {ctx.command}: {error}")
