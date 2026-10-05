@@ -673,10 +673,10 @@ class Moderation(commands.Cog):
             await ctx.send(embed=discord.Embed(description="No encontré a ese usuario.", color=0xed4245))
         elif isinstance(error, commands.RoleNotFound):
             await ctx.send(embed=discord.Embed(description="No encontré ese rol.", color=0xed4245))
-        elif isinstance(error, commands.MissingRequiredArgument):
-            await ctx.send(embed=discord.Embed(description=f"Falta el argumento `{error.param.name}`.", color=0xed4245))
         elif isinstance(error, commands.BadArgument):
             await ctx.send(embed=discord.Embed(description="Uno de los argumentos no es válido.", color=0xed4245))
+        elif isinstance(error, commands.MissingRequiredArgument):
+            pass  # lo maneja el handler global de main.py (tarjeta Command/Syntax/Example)
         else:
             log.error(f"Error en comando de moderación: {error}")
             raise error
