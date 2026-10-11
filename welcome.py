@@ -13,6 +13,7 @@ Comandos:
 Variables disponibles: ver embed_scripting.py (user.*, guild.*, channel.*)
 """
 
+import asyncio
 import discord
 from discord.ext import commands
 from config import db
@@ -31,9 +32,22 @@ def _get_welcomes(guild_id: int) -> list:
 
 
 def _save_welcomes(guild_id: int, entries: list):
-    config = db.get_guild(guild_id)
-    config["welcome_entries"] = entries
-    db.update_guild(guild_id, config)
+    # Guarda SOLO este campo (atómico). Antes se reescribía el documento completo del
+    # servidor, y cualquier otro módulo con una copia vieja de la config podía pisar
+    # (borrar) los welcomes sin avisar.
+    db.set_guild_field(guild_id, "welcome_entries", entries)
+
+
+async def _load_welcomes(guild_id: int) -> list | None:
+    """Lee los welcomes en un hilo (pymongo es síncrono y bloquearía el bot) y reintenta
+    una vez si Mongo falla justo en ese momento. Devuelve None si no se pudo leer."""
+    for attempt in (1, 2):
+        try:
+            return await asyncio.to_thread(_get_welcomes, guild_id)
+        except Exception:
+            log.exception(f"[{guild_id}] No se pudieron leer los welcomes (intento {attempt}/2)")
+            await asyncio.sleep(1.5)
+    return None
 
 
 # ── Cog ──────────────────────────────────────────────────────────────────────
@@ -56,32 +70,61 @@ class Welcome(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
+    async def _resolve_channel(self, guild: discord.Guild, channel_id: int):
+        """Busca el canal en caché y, si no está, lo pide a Discord (la caché puede
+        estar incompleta tras una reconexión)."""
+        channel = guild.get_channel(channel_id) or guild.get_thread(channel_id)
+        if channel is not None:
+            return channel
+        try:
+            return await self.bot.fetch_channel(channel_id)
+        except discord.NotFound:
+            log.warning(f"[{guild.name}] El canal de welcome {channel_id} ya no existe — revisa ,welcome list")
+        except discord.Forbidden:
+            log.warning(f"[{guild.name}] Sin acceso al canal de welcome {channel_id}")
+        except discord.HTTPException as e:
+            log.warning(f"[{guild.name}] No se pudo obtener el canal de welcome {channel_id}: {e}")
+        return None
+
+    async def _send_entry(self, member: discord.Member, index: int, entry: dict):
+        guild = member.guild
+        channel = await self._resolve_channel(guild, int(entry["channel_id"]))
+        if channel is None:
+            return
+
+        embed, content, view = build_message(_get_parsed(entry), member=member)
+        kwargs = {}
+        if content:
+            kwargs["content"] = content
+        if embed:
+            kwargs["embed"] = embed
+        if view:
+            kwargs["view"] = view
+        if not kwargs:
+            log.warning(f"[{guild.name}] La entrada #{index} de welcome no tiene contenido para enviar")
+            return
+
+        await send_via_webhook(channel, **kwargs)
+        log.info(f"[{guild.name}] Welcome #{index} enviado en #{getattr(channel, 'name', channel.id)} para {member}")
+
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member):
         if member.bot:
             return
 
-        entries = _get_welcomes(member.guild.id)
-        for entry in entries:
-            channel = member.guild.get_channel(int(entry["channel_id"]))
-            if not channel:
-                continue
+        entries = await _load_welcomes(member.guild.id)
+        if not entries:
+            return
 
-            embed, content, view = build_message(_get_parsed(entry), member=member)
-
+        # Cada entrada va por separado: si una falla (canal borrado, embed inválido,
+        # permisos...) las demás se envían igual y el error queda en el log.
+        for index, entry in enumerate(entries, 1):
             try:
-                kwargs = {}
-                if content:
-                    kwargs["content"] = content
-                if embed:
-                    kwargs["embed"] = embed
-                if view:
-                    kwargs["view"] = view
-                await send_via_webhook(channel, **kwargs)
+                await self._send_entry(member, index, entry)
             except discord.Forbidden:
-                log.warning(f"[{member.guild.name}] Sin permisos para mandar welcome en {channel.name}")
-            except Exception as e:
-                log.error(f"[{member.guild.name}] Welcome error: {e}")
+                log.warning(f"[{member.guild.name}] Sin permisos para mandar el welcome #{index}")
+            except Exception:
+                log.exception(f"[{member.guild.name}] Welcome #{index} falló")
 
     @commands.group(name="welcome", invoke_without_command=True)
     @commands.has_permissions(manage_guild=True)
@@ -129,7 +172,7 @@ class Welcome(commands.Cog):
         lines = []
         for i, e in enumerate(entries, 1):
             ch = ctx.guild.get_channel(int(e["channel_id"]))
-            ch_mention = ch.mention if ch else f"`{e['channel_id']}`"
+            ch_mention = ch.mention if ch else f"`{e['channel_id']}` (canal no encontrado — elimina esta entrada y vuelve a agregarla)"
             lines.append(f"**{i}.** {ch_mention}")
 
         await ctx.send(embed=discord.Embed(
