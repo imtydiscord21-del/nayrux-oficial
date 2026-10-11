@@ -137,21 +137,6 @@ CATEGORIES = {
             ], None),
         ],
     },
-    "ia": {
-        "label": "IA",
-        "description": "Chat con IA vía API. Responde en un canal, por mención o por DM.",
-        "sections": [
-            ("IA", [
-                ",ai <pregunta>",
-                ",ai setup <#canal>",
-                ",ai off",
-                ",ai status",
-                ",ai persona <texto>",
-                ",ai reset",
-                ",ai clearhistory",
-            ], "La IA responde automáticamente en el canal configurado, cuando mencionan al bot, o por DM."),
-        ],
-    },
     "configuracion": {
         "label": "Configuración",
         "description": "Prefijo, canal de logs, apariencia de embeds y configuración rápida del bot.",
@@ -431,7 +416,6 @@ ALIASES = {
     "invites": "invitaciones", "invite": "invitaciones",
     "giveaway": "giveaways", "sorteos": "giveaways", "sorteo": "giveaways",
     "respaldo": "backup",
-    "ai": "ia", "chatgpt": "ia", "gpt": "ia",
 }
 
 
@@ -521,7 +505,6 @@ CATEGORY_EMOJIS = {
     "emoji": discord.PartialEmoji(name="emoji", id=1552752889796108308),
     "backup": discord.PartialEmoji(name="backup", id=1552752833856806922),
     "premium": discord.PartialEmoji(name="premium", id=1552753026563973150),
-    "ia": discord.PartialEmoji(name="ia", id=1552753077405224960),
 }
 
 
