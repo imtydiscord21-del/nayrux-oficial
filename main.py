@@ -35,6 +35,13 @@ COMMAND_INFO = {
     "hardban": {"desc": "Banea a un usuario y lo vuelve a banear si alguien lo desbanea. Usa el mismo comando otra vez para quitarle el hardban", "example": "hb 123456789012345678 haciendo alts"},
     "rolesoff": {"desc": "Quita todos los permisos a todos los roles del servidor y guarda una copia (solo dueño del bot/servidor)", "example": "rolesoff"},
     "roleson": {"desc": "Restaura los permisos guardados por ,rolesoff a todos los roles (solo dueño del bot/servidor)", "example": "roleson"},
+    "ai": {"desc": "Consulta a la IA", "example": "ai explícame qué es un webhook"},
+    "ai setup": {"desc": "Activa la IA en un canal", "example": "ai setup #general"},
+    "ai off": {"desc": "Desactiva el canal de IA", "example": "ai off"},
+    "ai status": {"desc": "Muestra la configuración de la IA", "example": "ai status"},
+    "ai persona": {"desc": "Cambia la personalidad de la IA", "example": "ai persona Eres un pirata"},
+    "ai reset": {"desc": "Borra el historial del canal actual", "example": "ai reset"},
+    "ai clearhistory": {"desc": "Borra el historial de todos los canales", "example": "ai clearhistory"},
 }
 
 # Nombres de parámetros (en inglés en el código) -> como se muestran en la sintaxis
@@ -160,6 +167,7 @@ class AntiNukeBot(commands.Bot):
             "boost",
             "vanity_watch",
             "changelog",
+            "ai_chat",
         ]
         for cog in cogs:
             try:
