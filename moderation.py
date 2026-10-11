@@ -26,6 +26,8 @@ Comandos:
   ,roleall <@rol>                            — añade el rol a todos los miembros
   ,unroleall <@rol>                          — quita el rol a todos los miembros
   ,modlogs <@usuario>
+  ,rolesoff                                  — quita todos los permisos a todos los roles (solo dueño del bot/servidor)
+  ,roleson                                   — restaura los permisos guardados por ,rolesoff (solo dueño del bot/servidor)
 """
 
 import discord
@@ -35,7 +37,9 @@ from logger import _resolve_log_channel
 from webhook_utils import send_via_webhook
 from emojis import ADD, REMOVE
 import re
+import json
 import logging
+from pathlib import Path
 from datetime import datetime, timezone, timedelta
 
 log = logging.getLogger("antinuke.moderation")
@@ -43,6 +47,8 @@ log = logging.getLogger("antinuke.moderation")
 DURATION_RE = re.compile(r"^(\d+)\s*([smhd])$", re.IGNORECASE)
 DURATION_UNITS = {"s": 1, "m": 60, "h": 3600, "d": 86400}
 MAX_TIMEOUT_DAYS = 28
+
+ROLE_PERMS_BACKUP = Path("role_perms_backup.json")
 
 
 async def _send_mod_log(guild: discord.Guild, *, title: str, target, moderator: discord.Member, reason: str, extra_fields=None, color: int = 0x2b2d31):
@@ -122,6 +128,46 @@ async def _ack(ctx: commands.Context, emoji: str, fallback_text: str):
         await ctx.message.add_reaction(emoji)
     except (discord.Forbidden, discord.NotFound, discord.HTTPException):
         await ctx.send(embed=discord.Embed(description=fallback_text, color=0x57f287))
+
+
+def _is_bot_or_guild_owner(ctx: commands.Context) -> bool:
+    """True si el autor es el dueño del bot o el dueño del servidor."""
+    return ctx.author.id == ctx.guild.owner_id or ctx.author.id in ctx.bot.owner_ids
+
+
+def _load_role_perm_backup(guild_id: int) -> dict:
+    """Carga el respaldo de permisos de roles del servidor. Devuelve {} si no hay."""
+    if not ROLE_PERMS_BACKUP.exists():
+        return {}
+    try:
+        data = json.loads(ROLE_PERMS_BACKUP.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
+    return data.get(str(guild_id), {})
+
+
+def _save_role_perm_backup(guild_id: int, roles_data: dict) -> None:
+    """Persiste el respaldo de permisos de roles del servidor."""
+    data = {}
+    if ROLE_PERMS_BACKUP.exists():
+        try:
+            data = json.loads(ROLE_PERMS_BACKUP.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            data = {}
+    data[str(guild_id)] = roles_data
+    ROLE_PERMS_BACKUP.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
+def _clear_role_perm_backup(guild_id: int) -> None:
+    """Elimina el respaldo guardado de un servidor."""
+    if not ROLE_PERMS_BACKUP.exists():
+        return
+    try:
+        data = json.loads(ROLE_PERMS_BACKUP.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return
+    data.pop(str(guild_id), None)
+    ROLE_PERMS_BACKUP.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
 class Moderation(commands.Cog):
@@ -670,6 +716,128 @@ class Moderation(commands.Cog):
         if len(entries) > 15:
             embed.set_footer(text=f"Mostrando las últimas 15 de {len(entries)} acciones.")
         await ctx.send(embed=embed)
+
+    # ── Roles Off / Roles On (solo dueño del bot o del servidor) ─────────────
+
+    @commands.command(name="rolesoff")
+    @commands.has_permissions(administrator=True)
+    @commands.bot_has_permissions(manage_roles=True)
+    async def rolesoff(self, ctx: commands.Context):
+        """Quita TODOS los permisos a todos los roles del servidor (excepto @everyone, roles del bot y roles por encima del bot). Guarda una copia para restaurar con ,roleson."""
+        if not _is_bot_or_guild_owner(ctx):
+            return await ctx.send(embed=discord.Embed(
+                description="Solo el dueño del bot o del servidor puede usar este comando.",
+                color=0xed4245,
+            ))
+
+        if _load_role_perm_backup(ctx.guild.id):
+            return await ctx.send(embed=discord.Embed(
+                description="Ya existe una copia de permisos guardada. Usa `,roleson` antes de volver a ejecutar `,rolesoff`.",
+                color=0xed4245,
+            ))
+
+        bot_top = ctx.guild.me.top_role
+        backup = {}
+        modified = 0
+        skipped = 0
+
+        msg = await ctx.send(embed=discord.Embed(
+            description="Guardando permisos y removiendo todos los permisos de los roles...",
+            color=0x2b2d31,
+        ))
+
+        for role in ctx.guild.roles:
+            if role.is_default():
+                skipped += 1
+                continue
+            if role.managed:
+                skipped += 1
+                continue
+            if role >= bot_top:
+                skipped += 1
+                continue
+
+            backup[str(role.id)] = {
+                "name": role.name,
+                "permissions": role.permissions.value,
+            }
+            try:
+                await role.edit(permissions=discord.Permissions.none(), reason=f"rolesoff por {ctx.author}")
+                modified += 1
+            except (discord.Forbidden, discord.HTTPException):
+                skipped += 1
+
+        _save_role_perm_backup(ctx.guild.id, backup)
+
+        await msg.edit(embed=discord.Embed(
+            description=f"Se quitaron los permisos de `{modified}` rol(es). Se omitieron `{skipped}`.\n"
+                        f"Se guardó una copia de `{len(backup)}` rol(es) para restaurar con `,roleson`.",
+            color=0x57f287,
+        ))
+
+        await _send_mod_log(
+            ctx.guild, title="Roles Off — Permisos Removidos", target=None, moderator=ctx.author,
+            reason=f"Permisos removidos de {modified} rol(es).", color=0xed4245,
+        )
+
+    @commands.command(name="roleson")
+    @commands.has_permissions(administrator=True)
+    @commands.bot_has_permissions(manage_roles=True)
+    async def roleson(self, ctx: commands.Context):
+        """Restaura los permisos guardados por ,rolesoff a todos los roles del servidor."""
+        if not _is_bot_or_guild_owner(ctx):
+            return await ctx.send(embed=discord.Embed(
+                description="Solo el dueño del bot o del servidor puede usar este comando.",
+                color=0xed4245,
+            ))
+
+        backup = _load_role_perm_backup(ctx.guild.id)
+        if not backup:
+            return await ctx.send(embed=discord.Embed(
+                description="No hay ninguna copia de permisos guardada. Usa `,rolesoff` primero.",
+                color=0xed4245,
+            ))
+
+        msg = await ctx.send(embed=discord.Embed(
+            description="Restaurando permisos de los roles...",
+            color=0x2b2d31,
+        ))
+
+        restored = 0
+        skipped = 0
+        bot_top = ctx.guild.me.top_role
+
+        for role_id_str, data in backup.items():
+            role = ctx.guild.get_role(int(role_id_str))
+            if role is None:
+                skipped += 1
+                continue
+            if role.managed or role.is_default():
+                skipped += 1
+                continue
+            if role >= bot_top:
+                skipped += 1
+                continue
+            try:
+                await role.edit(
+                    permissions=discord.Permissions(data["permissions"]),
+                    reason=f"roleson por {ctx.author}",
+                )
+                restored += 1
+            except (discord.Forbidden, discord.HTTPException):
+                skipped += 1
+
+        _clear_role_perm_backup(ctx.guild.id)
+
+        await msg.edit(embed=discord.Embed(
+            description=f"Se restauraron los permisos de `{restored}` rol(es). Se omitieron `{skipped}`.",
+            color=0x57f287,
+        ))
+
+        await _send_mod_log(
+            ctx.guild, title="Roles On — Permisos Restaurados", target=None, moderator=ctx.author,
+            reason=f"Permisos restaurados en {restored} rol(es).", color=0x57f287,
+        )
 
     # ── Manejo de errores de permisos, propio de este cog ────────────────────
 
