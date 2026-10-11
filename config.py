@@ -134,6 +134,17 @@ class Database:
         self.get_guild(guild_id)  # asegura que el documento exista con sus valores por defecto
         _guilds.update_one({"_id": str(guild_id)}, {"$set": {key: value}}, upsert=True)
 
+    def guilds_with_field(self, key: str) -> list:
+        """[(guild_id, valor)] de los servidores que tienen ese campo con contenido.
+        Sirve para tareas en segundo plano (p. ej. revisar Instagram) sin recorrer todo."""
+        out = []
+        for doc in _guilds.find({key: {"$exists": True, "$nin": [None, [], {}]}}, {key: 1}):
+            try:
+                out.append((int(doc["_id"]), doc.get(key)))
+            except (ValueError, TypeError, KeyError):
+                continue
+        return out
+
     # ── Persona del bot por servidor ─────────────────────────────────────────
     # {"name": str|None, "avatar": bytes|None, "v": int}  (v cambia cada vez que
     # cambia el avatar; webhook_utils lo usa para saber si debe resubirlo)
