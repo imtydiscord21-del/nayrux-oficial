@@ -310,7 +310,7 @@ CATEGORIES = {
                 ",firstmessage",
                 ",lastmessage",
                 ",messageinfo",
-                ",snipe / ,s",
+                ",snipe / ,s [n]",
                 ",cs (borra el snipe guardado de este canal)",
                 ",editsnipe / ,es",
             ], None),
@@ -364,13 +364,17 @@ CATEGORIES = {
         "description": "Exclusivo para el dueño del bot y el dueño del servidor.",
         "sections": [
             ("Perfil del Bot EN ESTE SERVIDOR", [
-                ",changeavatar <url>",
+                ",changeavatar [url]",
                 ",changename <nombre>",
+                ",changebanner [url]",
                 ",resetprofile",
-            ], "Solo cambia cómo se ve el bot cuando manda mensajes en este servidor (vía webhook) — no toca la cuenta real."),
-            ("Perfil del Bot GLOBAL", [
-                ",changebanner <url>",
-            ], "Este sí cambia la cuenta real, se ve igual en todos los servidores (los webhooks no soportan banner)."),
+            ], "Solo cambia cómo se ve el bot en este servidor — no toca otros servidores ni la cuenta real. El avatar y el banner también se pueden adjuntar como imagen."),
+            ("Perfil del Bot GLOBAL (solo owner del bot)", [
+                ",globalavatar [url]",
+                ",globalname <nombre>",
+                ",globalbanner [url]",
+                ",globalreset",
+            ], "Estos sí cambian la cuenta real del bot y se ven igual en todos los servidores."),
             ("Perfil del Servidor", [
                 ",guildicon <url>",
                 ",guildbanner <url>",
@@ -381,6 +385,15 @@ CATEGORIES = {
         ],
     },
 }
+
+# Categorías que siguen existiendo (sus comandos funcionan) pero no se muestran
+# en el menú ni en ,help <categoría>.
+HIDDEN_CATEGORIES = {"imagenes"}
+
+
+def _visible_categories() -> dict:
+    return {k: v for k, v in CATEGORIES.items() if k not in HIDDEN_CATEGORIES}
+
 
 ALIASES = {
     "utilities": "information", "utils": "information", "utilidades": "information", "info": "information",
@@ -408,12 +421,17 @@ def _localize(cmd: str, prefix: str) -> str:
     return prefix + cmd[1:] if cmd.startswith(",") else cmd
 
 
+def _me(bot: discord.Client, guild: discord.Guild | None):
+    """El bot tal como se ve EN ESTE servidor (apodo/avatar por servidor si los tiene)."""
+    return guild.me if guild is not None and guild.me is not None else bot.user
+
+
 def _guild_icon(guild: discord.Guild) -> str | None:
     return guild.icon.url if guild and guild.icon else None
 
 
 def _total_commands() -> int:
-    return sum(len(cmds) for data in CATEGORIES.values() for _, cmds, _ in data["sections"])
+    return sum(len(cmds) for data in _visible_categories().values() for _, cmds, _ in data["sections"])
 
 
 def _bot_invite_url(bot: discord.Client) -> str:
@@ -424,13 +442,13 @@ def _build_overview_embed(bot: discord.Client, guild: discord.Guild, prefix: str
     e = discord.Embed(
         description=(
             f"**Prefix:** `{prefix}`\n"
-            f"**Commands:** `{_total_commands()}` | **Categories:** `{len(CATEGORIES)}`\n\n"
+            f"**Commands:** `{_total_commands()}` | **Categories:** `{len(_visible_categories())}`\n\n"
             f"[Support Server]({SUPPORT_SERVER_URL}) | [Bot Invite]({_bot_invite_url(bot)})\n\n"
             "Selecciona una categoría abajo para ver sus comandos."
         ),
         color=0x2b2d31,
     )
-    e.set_author(name=f"{bot.user.name} Help", icon_url=bot.user.display_avatar.url)
+    e.set_author(name=f"{_me(bot, guild).display_name} Help", icon_url=_me(bot, guild).display_avatar.url)
     icon = _guild_icon(guild)
     if icon:
         e.set_thumbnail(url=icon)
@@ -441,7 +459,7 @@ def _build_overview_embed(bot: discord.Client, guild: discord.Guild, prefix: str
 def _build_category_embed(bot: discord.Client, guild: discord.Guild, cat_key: str, prefix: str) -> discord.Embed:
     data = CATEGORIES[cat_key]
     e = discord.Embed(title=data["label"], color=0x2b2d31)
-    e.set_author(name=f"{bot.user.name} Help", icon_url=bot.user.display_avatar.url)
+    e.set_author(name=f"{_me(bot, guild).display_name} Help", icon_url=_me(bot, guild).display_avatar.url)
     icon = _guild_icon(guild)
     if icon:
         e.set_thumbnail(url=icon)
@@ -455,7 +473,7 @@ def _build_category_embed(bot: discord.Client, guild: discord.Guild, cat_key: st
             parts.append(note)
     e.description = "\n".join(parts)
 
-    e.set_footer(text=f"Selecciona una categoría desde el menú de abajo · {bot.user.name}")
+    e.set_footer(text=f"Selecciona una categoría desde el menú de abajo · {_me(bot, guild).display_name}")
     e.timestamp = discord.utils.utcnow()
     return e
 
@@ -499,7 +517,7 @@ class CategorySelect(discord.ui.Select):
                 label=data["label"], value=key, description=data["description"][:100],
                 emoji=CATEGORY_EMOJIS.get(key),
             )
-            for key, data in CATEGORIES.items()
+            for key, data in _visible_categories().items()
         ]
         super().__init__(placeholder="Selecciona una categoría...", options=options)
 
@@ -551,13 +569,13 @@ class Help(commands.Cog):
         cat_key = category.lower().strip()
         cat_key = ALIASES.get(cat_key, cat_key)
 
-        if cat_key not in CATEGORIES:
-            available = " · ".join(f"`{k}`" for k in CATEGORIES)
+        if cat_key not in _visible_categories():
+            available = " · ".join(f"`{k}`" for k in _visible_categories())
             e = discord.Embed(
                 description=f"Categoría `{category}` no encontrada.\nDisponibles: {available}",
                 color=0x2b2d31,
             )
-            e.set_author(name=f"{self.bot.user.name} Help", icon_url=self.bot.user.display_avatar.url)
+            e.set_author(name=f"{_me(self.bot, ctx.guild).display_name} Help", icon_url=_me(self.bot, ctx.guild).display_avatar.url)
             return await ctx.send(embed=e)
 
         embed = _build_category_embed(self.bot, ctx.guild, cat_key, prefix)
