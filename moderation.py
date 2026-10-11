@@ -115,6 +115,15 @@ def _add_mod_action(guild_id: int, user_id: int, action_type: str, moderator_id:
     db.update_guild(guild_id, config)
 
 
+async def _ack(ctx: commands.Context, emoji: str, fallback_text: str):
+    """Confirma un comando reaccionando al mensaje del usuario. Si el bot no puede
+    reaccionar (sin permiso, mensaje borrado), manda el texto como respaldo."""
+    try:
+        await ctx.message.add_reaction(emoji)
+    except (discord.Forbidden, discord.NotFound, discord.HTTPException):
+        await ctx.send(embed=discord.Embed(description=fallback_text, color=0x57f287))
+
+
 class Moderation(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -152,11 +161,17 @@ class Moderation(commands.Cog):
     @commands.command(name="ban")
     @commands.has_permissions(ban_members=True)
     @commands.bot_has_permissions(ban_members=True)
-    async def ban(self, ctx: commands.Context, member: discord.Member, delete_days: int = 0, *, reason: str = "Sin razón especificada"):
+    async def ban(self, ctx: commands.Context, member: discord.Member, *, reason: str = "Sin razón especificada"):
+        # Días de mensajes a borrar (0-7) es opcional: ",ban @user 3 spam" o ",ban @user spam".
+        delete_days = 0
+        m = re.match(r"^([0-7])(?:\s+(.+))?$", reason, re.DOTALL)
+        if m:
+            delete_days = int(m.group(1))
+            reason = m.group(2) or "Sin razón especificada"
+
         error = _hierarchy_error(ctx, member)
         if error:
             return await ctx.send(embed=discord.Embed(description=error, color=0xed4245))
-        delete_days = max(0, min(delete_days, 7))
 
         try:
             await member.send(embed=discord.Embed(
@@ -403,13 +418,14 @@ class Moderation(commands.Cog):
     async def lock(self, ctx: commands.Context, channel: discord.TextChannel = None):
         channel = channel or ctx.channel
         overwrite = channel.overwrites_for(ctx.guild.default_role)
+        if overwrite.send_messages is False:
+            return await ctx.send(embed=discord.Embed(
+                description=f"{channel.mention} ya se encuentra bloqueado.",
+                color=0x2b2d31,
+            ))
         overwrite.send_messages = False
         await channel.set_permissions(ctx.guild.default_role, overwrite=overwrite, reason=f"Bloqueado por {ctx.author}")
-
-        await ctx.send(embed=discord.Embed(
-            description=f"{channel.mention} fue bloqueado. @everyone ya no puede escribir aquí.",
-            color=0x57f287,
-        ))
+        await _ack(ctx, "🔒", f"{channel.mention} fue bloqueado. @everyone ya no puede escribir aquí.")
 
     @commands.command(name="unlock", aliases=["unlockchannel"])
     @commands.has_permissions(manage_channels=True)
@@ -417,13 +433,14 @@ class Moderation(commands.Cog):
     async def unlock(self, ctx: commands.Context, channel: discord.TextChannel = None):
         channel = channel or ctx.channel
         overwrite = channel.overwrites_for(ctx.guild.default_role)
+        if overwrite.send_messages is not False:
+            return await ctx.send(embed=discord.Embed(
+                description=f"{channel.mention} ya se encuentra desbloqueado.",
+                color=0x2b2d31,
+            ))
         overwrite.send_messages = None
         await channel.set_permissions(ctx.guild.default_role, overwrite=overwrite, reason=f"Desbloqueado por {ctx.author}")
-
-        await ctx.send(embed=discord.Embed(
-            description=f"{channel.mention} fue desbloqueado.",
-            color=0x57f287,
-        ))
+        await _ack(ctx, "🔓", f"{channel.mention} fue desbloqueado.")
 
     @commands.command(name="slowmode")
     @commands.has_permissions(manage_channels=True)
