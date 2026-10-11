@@ -9,11 +9,24 @@ El cache es solo en memoria (se pierde si el bot se reinicia) y guarda
 
 import discord
 from discord.ext import commands
+from collections import deque
 from datetime import datetime, timezone
 
-# channel_id -> dict con datos del último mensaje borrado/editado
-_last_deleted: dict[int, dict] = {}
+MAX_SNIPES = 10  # cuántos mensajes borrados se recuerdan por canal
+
+# channel_id -> últimos mensajes borrados (el más reciente al final) / último editado
+_last_deleted: dict[int, deque] = {}
 _last_edited: dict[int, dict] = {}
+
+
+def _ago(dt: datetime) -> str:
+    """'1 segundo', '5 minutos', '2 horas', '3 días' — tiempo transcurrido desde dt."""
+    secs = max(0, int((datetime.now(timezone.utc) - dt).total_seconds()))
+    for unit_secs, singular, plural in ((86400, "día", "días"), (3600, "hora", "horas"), (60, "minuto", "minutos")):
+        if secs >= unit_secs:
+            n = secs // unit_secs
+            return f"{n} {singular if n == 1 else plural}"
+    return f"{secs} {'segundo' if secs == 1 else 'segundos'}"
 
 
 def _extract_image(message: discord.Message) -> str | None:
@@ -49,14 +62,14 @@ class Snipe(commands.Cog):
     async def on_message_delete(self, message: discord.Message):
         if message.guild is None:
             return
-        _last_deleted[message.channel.id] = {
+        _last_deleted.setdefault(message.channel.id, deque(maxlen=MAX_SNIPES)).append({
             "content": _extract_text(message),
             "author_name": message.author.display_name,
             "author_avatar": message.author.display_avatar.url,
             "image": _extract_image(message),
             "extra_count": max(0, len(message.attachments) - 1),
             "deleted_at": datetime.now(timezone.utc),
-        }
+        })
 
     @commands.Cog.listener()
     async def on_message_edit(self, before: discord.Message, after: discord.Message):
@@ -72,14 +85,18 @@ class Snipe(commands.Cog):
         }
 
     @commands.command(name="snipe", aliases=["s"])
-    async def snipe(self, ctx: commands.Context):
-        """Muestra el último mensaje borrado en este canal."""
-        data = _last_deleted.get(ctx.channel.id)
-        if not data:
+    async def snipe(self, ctx: commands.Context, number: int = 1):
+        """Muestra el último mensaje borrado en este canal (,s 2 = el anterior, etc.)."""
+        history = _last_deleted.get(ctx.channel.id)
+        if not history:
             return await ctx.send(embed=discord.Embed(
                 description="No hay ningún mensaje borrado reciente en este canal.",
                 color=0x2b2d31,
             ))
+        total = len(history)
+        number = max(1, min(number, total))
+        data = history[-number]  # 1 = el más reciente
+
         e = discord.Embed(
             description=data["content"] or "*(sin texto — puede haber sido solo un adjunto)*",
             color=0x2b2d31,
@@ -89,18 +106,21 @@ class Snipe(commands.Cog):
             e.set_image(url=data["image"])
         if data["extra_count"]:
             e.add_field(name="Adjuntos", value=f"+{data['extra_count']} más", inline=False)
-        e.set_footer(text=f"Borrado {discord.utils.format_dt(data['deleted_at'], 'R')}")
+        e.set_footer(text=f"Eliminado hace {_ago(data['deleted_at'])} • {number}/{total}")
         await ctx.send(embed=e)
 
     @commands.command(name="cs", aliases=["clearsnipe"])
     @commands.has_permissions(manage_messages=True)
     async def clearsnipe(self, ctx: commands.Context):
-        """Borra el mensaje sniped guardado de este canal — ,s deja de mostrarlo hasta que se borre algo nuevo."""
+        """Borra los mensajes sniped guardados de este canal — ,s deja de mostrarlos hasta que se borre algo nuevo."""
         had_deleted = _last_deleted.pop(ctx.channel.id, None) is not None
         had_edited = _last_edited.pop(ctx.channel.id, None) is not None
         if not had_deleted and not had_edited:
             return await ctx.send(embed=discord.Embed(description="No había nada guardado en este canal.", color=0x2b2d31))
-        await ctx.send(embed=discord.Embed(description="Snipe de este canal borrado.", color=0x57f287))
+        try:
+            await ctx.message.add_reaction("✅")
+        except (discord.Forbidden, discord.NotFound, discord.HTTPException):
+            await ctx.send(embed=discord.Embed(description="Snipe de este canal borrado.", color=0x57f287))
 
     @commands.command(name="editsnipe", aliases=["es"])
     async def editsnipe(self, ctx: commands.Context):
