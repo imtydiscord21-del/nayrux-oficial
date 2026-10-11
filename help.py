@@ -115,6 +115,10 @@ CATEGORIES = {
                 ",r <usuario> <rol> — atajo: agrega si no lo tiene, quita si ya lo tiene",
                 ",modlogs <usuario>",
             ], None),
+            ("Roles Masivos (solo dueño del bot/servidor)", [
+                ",rolesoff",
+                ",roleson",
+            ], "`,rolesoff` guarda una copia de los permisos de todos los roles y luego los deja sin permisos. `,roleson` restaura esa copia. Solo el dueño del bot o del servidor puede usarlos."),
             ("Jail", [
                 ",setupjail",
                 ",jail <usuario> [razón]",
