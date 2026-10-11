@@ -1,12 +1,26 @@
 import os
+import time
 from pymongo import MongoClient
 
 DEFAULT_PREFIX = ","
 
-_client = MongoClient(os.getenv("MONGO_URI"))
+# Timeouts explícitos: sin ellos, si Mongo se cae o Railway corta una conexión
+# inactiva, una consulta puede quedarse colgada ~30s bloqueando todo el bot
+# (y con eso se pierden eventos como los welcomes). maxIdleTimeMS descarta
+# conexiones viejas antes de que el servidor las cierre.
+_client = MongoClient(
+    os.getenv("MONGO_URI"),
+    serverSelectionTimeoutMS=8000,
+    connectTimeoutMS=8000,
+    socketTimeoutMS=20000,
+    maxIdleTimeMS=60000,
+    retryReads=True,
+    retryWrites=True,
+)
 _db = _client["bot2"]
 _guilds = _db["guilds"]
 _users = _db["users"]
+_persona = _db["persona"]  # nombre/avatar del bot POR servidor (ver premium.py)
 
 
 def default_guild_config() -> dict:
@@ -113,6 +127,53 @@ class Database:
             {"_id": str(guild_id), **config},
             upsert=True,
         )
+
+    def set_guild_field(self, guild_id: int, key: str, value):
+        """Guarda UN solo campo del servidor de forma atómica ($set), sin reemplazar
+        el documento entero. Evita que una copia vieja de la config pise este campo."""
+        self.get_guild(guild_id)  # asegura que el documento exista con sus valores por defecto
+        _guilds.update_one({"_id": str(guild_id)}, {"$set": {key: value}}, upsert=True)
+
+    # ── Persona del bot por servidor ─────────────────────────────────────────
+    # {"name": str|None, "avatar": bytes|None, "v": int}  (v cambia cada vez que
+    # cambia el avatar; webhook_utils lo usa para saber si debe resubirlo)
+
+    _persona_cache: dict = {}
+
+    def peek_persona(self, guild_id: int):
+        """Devuelve la persona desde la caché en memoria, o None si aún no se cargó
+        (así se puede cargar en un hilo sin bloquear el bot)."""
+        return self._persona_cache.get(guild_id)
+
+    def get_persona(self, guild_id: int) -> dict:
+        cached = self._persona_cache.get(guild_id)
+        if cached is not None:
+            return cached
+        doc = _persona.find_one({"_id": str(guild_id)}) or {}
+        persona = {"name": doc.get("name"), "avatar": doc.get("avatar"), "v": int(doc.get("v", 0))}
+        self._persona_cache[guild_id] = persona
+        return persona
+
+    def set_persona(self, guild_id: int, *, name="__keep__", avatar="__keep__"):
+        """Cambia nombre y/o avatar del bot en ESTE servidor. None = quitar; '__keep__' = no tocar."""
+        persona = dict(self.get_persona(guild_id))
+        if name != "__keep__":
+            persona["name"] = name
+        if avatar != "__keep__":
+            persona["avatar"] = avatar
+            # siempre mayor que la versión anterior, aunque dos cambios caigan en el mismo milisegundo
+            persona["v"] = max(int(time.time() * 1000), persona.get("v", 0) + 1) if avatar else 0
+        _persona.replace_one(
+            {"_id": str(guild_id)},
+            {"_id": str(guild_id), **persona},
+            upsert=True,
+        )
+        self._persona_cache[guild_id] = persona
+        return persona
+
+    def clear_persona(self, guild_id: int):
+        _persona.delete_one({"_id": str(guild_id)})
+        self._persona_cache[guild_id] = {"name": None, "avatar": None, "v": 0}
 
     def get_user(self, user_id: int) -> dict:
         """Historial global (no por servidor) de nombres/avatares/nitro de un usuario."""
