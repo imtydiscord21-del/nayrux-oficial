@@ -99,6 +99,11 @@ class AntiNukeBot(commands.Bot):
             "ai_chat",
             "fakepermissions",
             "instagram",
+            "saved_embeds",
+            "wlc",
+            "boostmsg",
+            "afk",
+            "info_extra",
         ]
         for cog in cogs:
             try:
