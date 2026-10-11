@@ -13,25 +13,72 @@ logging.basicConfig(
 )
 log = logging.getLogger("antinuke")
 
-# Descripciones/ejemplos curados para el mensaje de "falta un argumento" — el
-# resto de los comandos igual arma una tarjeta con Command + Syntax genéricos.
+# Tarjeta de ayuda "falta un argumento" (estilo bender, en español).
+# desc    -> descripción corta (se muestra en negrita)
+# syntax  -> (opcional) sintaxis exacta sin el prefijo; si falta se arma sola
+# example -> ejemplo sin el prefijo
 COMMAND_INFO = {
-    "ban": {"desc": "Banea a un miembro del servidor.", "example": "ban @usuario spam en el chat"},
-    "kick": {"desc": "Expulsa a un miembro del servidor.", "example": "kick @usuario siendo tóxico"},
-    "jail": {"desc": "Aísla a un miembro quitándole el acceso a los canales.", "example": "jail @usuario revisando el caso"},
-    "timeout": {"desc": "Silencia a un miembro por un tiempo determinado.", "example": "timeout @usuario 10m spameando"},
-    "warn": {"desc": "Advierte a un miembro.", "example": "warn @usuario lenguaje inapropiado"},
-    "purge": {"desc": "Borra una cantidad de mensajes del canal.", "example": "purge 50"},
-    "role add": {"desc": "Agrega un rol a un miembro.", "example": "role add @usuario Miembro"},
-    "role remove": {"desc": "Quita un rol a un miembro.", "example": "role remove @usuario Miembro"},
-    "r": {"desc": "Agrega el rol si no lo tiene, lo quita si ya lo tiene.", "example": "r @usuario Miembro"},
-    "lock": {"desc": "Bloquea el canal actual (o el que indiques).", "example": "lock"},
-    "unlock": {"desc": "Desbloquea el canal.", "example": "unlock"},
-    "slowmode": {"desc": "Configura el modo lento del canal.", "example": "slowmode 10"},
-    "nickname": {"desc": "Cambia el apodo de un miembro.", "example": "nickname @usuario Nuevo Nombre"},
-    "unban": {"desc": "Desbanea a un usuario por su ID.", "example": "unban 123456789012345678"},
-    "hardban": {"desc": "Banea a un usuario y lo vuelve a banear solo si alguien lo desbanea. Usá el mismo comando de nuevo para sacarle el hardban.", "example": "hb 123456789012345678 haciendo alts"},
+    "ban": {"desc": "Banea al usuario mencionado", "syntax": "ban (usuario) (razón)", "example": "ban derek spam"},
+    "kick": {"desc": "Expulsa al usuario mencionado del servidor", "syntax": "kick (miembro) <razón>", "example": "kick derek Necesitas un descanso"},
+    "jail": {"desc": "Aísla a un miembro quitándole el acceso a los canales", "example": "jail @usuario revisando el caso"},
+    "timeout": {"desc": "Silencia a un miembro por un tiempo determinado", "example": "timeout @usuario 10m spameando"},
+    "warn": {"desc": "Advierte a un miembro", "example": "warn @usuario lenguaje inapropiado"},
+    "purge": {"desc": "Borra una cantidad de mensajes del canal", "example": "purge 50"},
+    "role add": {"desc": "Agrega un rol a un miembro", "example": "role add @usuario Miembro"},
+    "role remove": {"desc": "Quita un rol a un miembro", "example": "role remove @usuario Miembro"},
+    "r": {"desc": "Agrega el rol si no lo tiene, lo quita si ya lo tiene", "example": "r @usuario Miembro"},
+    "lock": {"desc": "Bloquea el canal actual (o el que indiques)", "example": "lock"},
+    "unlock": {"desc": "Desbloquea el canal", "example": "unlock"},
+    "slowmode": {"desc": "Configura el modo lento del canal", "example": "slowmode 10"},
+    "nickname": {"desc": "Cambia el apodo de un miembro", "example": "nickname @usuario Nuevo Nombre"},
+    "unban": {"desc": "Desbanea a un usuario por su ID", "example": "unban 123456789012345678"},
+    "hardban": {"desc": "Banea a un usuario y lo vuelve a banear si alguien lo desbanea. Usa el mismo comando otra vez para quitarle el hardban", "example": "hb 123456789012345678 haciendo alts"},
 }
+
+# Nombres de parámetros (en inglés en el código) -> como se muestran en la sintaxis
+PARAM_ES = {
+    "member": "miembro", "user": "usuario", "reason": "razón", "channel": "canal",
+    "amount": "cantidad", "seconds": "segundos", "duration": "duración", "role": "rol",
+    "name": "nombre", "text": "texto", "n": "n", "url": "url", "code": "código",
+    "message": "mensaje", "content": "contenido", "prize": "premio", "category": "categoría",
+}
+
+
+def build_command_card(ctx: commands.Context) -> discord.Embed:
+    """Tarjeta de uso de un comando: 'Comando: x' + descripción + Sintaxis/Ejemplo."""
+    command = ctx.command
+    qualified = command.qualified_name
+    info = COMMAND_INFO.get(qualified, {})
+
+    prefix = DEFAULT_PREFIX
+    if ctx.guild is not None:
+        prefix = db.get_guild(ctx.guild.id).get("prefix", DEFAULT_PREFIX)
+
+    if info.get("syntax"):
+        syntax = prefix + info["syntax"]
+    else:
+        # obligatorios entre ( ), opcionales entre < >
+        parts = []
+        for pname, param in command.clean_params.items():
+            label = PARAM_ES.get(pname, pname)
+            parts.append(f"<{label}>" if not param.required else f"({label})")
+        syntax = f"{prefix}{qualified} {' '.join(parts)}".strip()
+
+    code_lines = [f"Sintaxis: {syntax}"]
+    if info.get("example"):
+        code_lines.append(f"Ejemplo: {prefix}{info['example']}")
+    desc = info.get("desc") or command.short_doc or command.help or ""
+    desc = desc.strip().split("\n")[0].rstrip(".")
+
+    description = ""
+    if desc:
+        description += f"**{desc}**\n"
+    description += "```\n" + "\n".join(code_lines) + "\n```"
+
+    me = ctx.guild.me if ctx.guild is not None and ctx.guild.me is not None else ctx.bot.user
+    e = discord.Embed(title=f"Comando: {qualified}", description=description, color=0x2b2d31)
+    e.set_author(name=f"{me.display_name} help", icon_url=me.display_avatar.url)
+    return e
 
 
 class WebhookContext(commands.Context):
@@ -180,27 +227,21 @@ class AntiNukeBot(commands.Bot):
                 description="Este comando es solo para el owner.",
                 color=0x2b2d31
             ))
+        elif isinstance(error, commands.BotMissingPermissions):
+            from emojis import REMOVE
+            perms = ", ".join(f"`{p}`" for p in error.missing_permissions)
+            await ctx.send(embed=discord.Embed(
+                description=f"{REMOVE} Necesito el permiso {perms} para ejecutar este comando.",
+                color=0xed4245,
+            ))
+        elif isinstance(error, commands.CheckFailure):
+            # Checks propios (p. ej. "solo el dueño del bot o del servidor") traen su mensaje
+            await ctx.send(embed=discord.Embed(
+                description=str(error) or "No puedes usar este comando.",
+                color=0xed4245,
+            ))
         elif isinstance(error, commands.MissingRequiredArgument):
-            command = ctx.command
-            qualified = command.qualified_name
-            info = COMMAND_INFO.get(qualified, {})
-            params = " ".join(f"({name})" for name in command.clean_params)
-            syntax = f"{ctx.prefix}{qualified} {params}".strip()
-
-            lines = []
-            if info.get("desc"):
-                lines.append(info["desc"])
-                lines.append("")
-            lines.append(f"Syntax: `{syntax}`")
-            if info.get("example"):
-                lines.append(f"Example: `{ctx.prefix}{info['example']}`")
-
-            e = discord.Embed(
-                title=f"Command: {qualified}",
-                description="\n".join(lines),
-                color=0x2b2d31,
-            )
-            await ctx.send(embed=e)
+            await ctx.send(embed=build_command_card(ctx))
         else:
             log.error(f"Error en {ctx.command}: {error}")
             await ctx.send(embed=discord.Embed(
