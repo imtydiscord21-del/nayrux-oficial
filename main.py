@@ -33,6 +33,8 @@ COMMAND_INFO = {
     "nickname": {"desc": "Cambia el apodo de un miembro", "example": "nickname @usuario Nuevo Nombre"},
     "unban": {"desc": "Desbanea a un usuario por su ID", "example": "unban 123456789012345678"},
     "hardban": {"desc": "Banea a un usuario y lo vuelve a banear si alguien lo desbanea. Usa el mismo comando otra vez para quitarle el hardban", "example": "hb 123456789012345678 haciendo alts"},
+    "rolesoff": {"desc": "Quita todos los permisos a todos los roles del servidor y guarda una copia (solo dueño del bot/servidor)", "example": "rolesoff"},
+    "roleson": {"desc": "Restaura los permisos guardados por ,rolesoff a todos los roles (solo dueño del bot/servidor)", "example": "roleson"},
 }
 
 # Nombres de parámetros (en inglés en el código) -> como se muestran en la sintaxis
