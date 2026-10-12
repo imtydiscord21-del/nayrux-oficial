@@ -115,10 +115,6 @@ CATEGORIES = {
                 ",r <usuario> <rol> — atajo: agrega si no lo tiene, quita si ya lo tiene",
                 ",modlogs <usuario>",
             ], None),
-            ("Roles Masivos (solo dueño del bot/servidor)", [
-                ",rolesoff",
-                ",roleson",
-            ], "`,rolesoff` guarda una copia de los permisos de todos los roles y luego los deja sin permisos. `,roleson` restaura esa copia. Solo el dueño del bot o del servidor puede usarlos."),
             ("Jail", [
                 ",setupjail",
                 ",jail <usuario> [razón]",
@@ -135,6 +131,10 @@ CATEGORIES = {
                 ",unban <id_usuario> [razón]",
                 ",unbanall",
             ], None),
+            ("Roles de Administrador (solo dueño del bot / del servidor)", [
+                ",rolesoff",
+                ",roleson",
+            ], "`,rolesoff` quita el permiso de Administrador a todos los roles que lo tengan (menos los del bot) y `,roleson` se lo devuelve a esos mismos roles."),
         ],
     },
     "configuracion": {
@@ -390,6 +390,113 @@ CATEGORIES = {
     },
 }
 
+# ── Comandos nuevos, integrados a sus categorías ─────────────────────────────
+
+CATEGORIES["bienvenidas"]["sections"].append((
+    "Bienvenida (wlc)", [
+        ",wlc config <canal> <mensaje>",
+        ",wlc test",
+        ",wlc variables",
+        ",wlc templates",
+        ",wlc reset",
+    ], "Mensaje de bienvenida con variables y embeds. Usa `,wlc variables` para ver todo lo que puedes poner.",
+))
+
+CATEGORIES["embeds"]["sections"].append((
+    "Embeds guardados", [
+        ",embed create <nombre> <mensaje>",
+        ",embed show <nombre>",
+        ",embed list",
+        ",embed delete <nombre>",
+    ], "Se usan en los mensajes de `,wlc` y `,boostmsg` con `{embed:nombre}`.",
+))
+
+CATEGORIES["information"]["sections"].append((
+    "Más información", [
+        ",emojiinfo <emoji>",
+        ",stickerinfo",
+        ",stats",
+    ], None,
+))
+
+CATEGORIES["security"]["sections"].append((
+    "Permisos falsos", [
+        ",fakepermissions add <rol> <permisos>",
+        ",fakepermissions remove <rol> <permisos>",
+        ",fakepermissions list [rol]",
+        ",fakepermissions reset",
+    ], "Tus moderadores usan los comandos del bot sin tener el permiso real de Discord. Solo el dueño del servidor.",
+))
+
+CATEGORIES["integrations"]["sections"].append((
+    "Instagram", [
+        ",instagram add <canal> <usuario>",
+        ",instagram remove <canal> <usuario>",
+        ",instagram message <usuario> <mensaje> [--pingable on|off]",
+        ",instagram list",
+    ], "Avisa en un canal cuando una cuenta de Instagram publica.",
+))
+
+_NEW_CATEGORIES = {
+    "boost": {
+        "label": "Boost",
+        "description": "Mensajes de boost y unboost, y rol de recompensa para quien boostea.",
+        "sections": [
+            ("Boost", [
+                ",boostmsg config <canal> <mensaje>",
+                ",boostmsg unboostconfig <canal> <mensaje>",
+                ",boostmsg test",
+                ",boostmsg testunboost",
+                ",boostmsg reward <rol>",
+                ",boostmsg removereward <rol>",
+                ",boostmsg variables",
+                ",boostmsg templates",
+                ",boostmsg reset",
+            ], None),
+        ],
+    },
+    "afk": {
+        "label": "AFK",
+        "description": "Ponte AFK y avisa a quien te mencione.",
+        "sections": [
+            ("AFK", [
+                ",afk [estado]",
+                ",afklist",
+            ], "Si alguien te menciona, el bot le avisa que estás AFK; al escribir, el estado se quita solo."),
+        ],
+    },
+    "ia": {
+        "label": "IA",
+        "description": "Chat con inteligencia artificial en un canal.",
+        "sections": [
+            ("IA", [
+                ",ai <mensaje>",
+                ",ai setup <canal>",
+                ",ai off",
+                ",ai status",
+                ",ai persona <texto>",
+                ",ai reset",
+                ",ai clearhistory",
+            ], None),
+        ],
+    },
+}
+
+# Orden del menú: Boost junto a Bienvenidas, AFK tras Information, IA tras Autoresponders
+_ordered = {}
+for _key, _val in CATEGORIES.items():
+    _ordered[_key] = _val
+    if _key == "bienvenidas":
+        _ordered["boost"] = _NEW_CATEGORIES["boost"]
+    elif _key == "autoresponder":
+        _ordered["ia"] = _NEW_CATEGORIES["ia"]
+    elif _key == "information":
+        _ordered["afk"] = _NEW_CATEGORIES["afk"]
+CATEGORIES.clear()
+CATEGORIES.update(_ordered)
+del _ordered
+
+
 # Categorías que siguen existiendo (sus comandos funcionan) pero no se muestran
 # en el menú ni en ,help <categoría>.
 HIDDEN_CATEGORIES = {"imagenes"}
@@ -416,6 +523,13 @@ ALIASES = {
     "invites": "invitaciones", "invite": "invitaciones",
     "giveaway": "giveaways", "sorteos": "giveaways", "sorteo": "giveaways",
     "respaldo": "backup",
+    "wlc": "bienvenidas", "boostmsg": "boost", "boost": "boost", "boosts": "boost",
+    "afk": "afk", "afklist": "afk",
+    "fakepermissions": "security", "fakeperms": "security", "fp": "security",
+    "instagram": "integrations", "ig": "integrations",
+    "embed": "embeds",
+    "ai": "ia", "ia": "ia",
+    "emojiinfo": "information", "stickerinfo": "information", "stats": "information",
 }
 
 
@@ -554,37 +668,183 @@ class HelpView(discord.ui.View):
 
 
 
+# ── Diseño nuevo (componentes V2 de Discord) ─────────────────────────────────
+#
+# Contenedor con: título + miniatura, separador, texto, separador, menú de categorías,
+# separador y botones. Necesita discord.py 2.6 o más. Si la librería no lo trae, o Discord
+# rechaza el mensaje, se usa automáticamente el diseño de embed de siempre.
+
+_V2 = all(
+    hasattr(discord.ui, name)
+    for name in ("LayoutView", "Container", "Section", "TextDisplay", "Thumbnail", "Separator", "ActionRow")
+)
+
+
+def _command_names(cmds) -> list:
+    """[',role add <rol>', ',snipe / ,s [n]'] -> ['role add', 'snipe'] (solo el nombre, sin argumentos)."""
+    names = []
+    for raw in cmds:
+        text = raw.strip().lstrip(",").split(" / ")[0].strip()
+        words = []
+        for word in text.split():
+            if word[0] in "<[({|":
+                break
+            words.append(word)
+        name = " ".join(words)
+        if name and name not in names:
+            names.append(name)
+    return names
+
+
+def _category_title(cat_key: str) -> str:
+    label = CATEGORIES[cat_key]["label"]
+    return label if label.lower().endswith("commands") else f"{label} Commands"
+
+
+def _category_body(cat_key: str) -> str:
+    """Una línea por sección, con los nombres de los comandos en `código` dentro de una cita."""
+    lines = []
+    notes = []
+    for _title, cmds, note in CATEGORIES[cat_key]["sections"]:
+        names = _command_names(cmds)
+        if names:
+            lines.append("> " + ", ".join(f"`{n}`" for n in names))
+        if note:
+            notes.append(f"-# {note}")
+    body = "\n".join(lines)
+    if notes:
+        body += "\n" + "\n".join(notes)
+    return body[:3800]
+
+
+def _overview_body(bot: discord.Client, prefix: str) -> str:
+    return (
+        f"> **Prefix:** `{prefix}`\n"
+        f"> **Commands:** `{_total_commands()}` | **Categories:** `{len(_visible_categories())}`\n"
+        f"> [Support Server]({SUPPORT_SERVER_URL}) | [Bot Invite]({_bot_invite_url(bot)})\n"
+        f"> Selecciona una categoría abajo para ver sus comandos.\n"
+        f"-# Usa {prefix}help <comando> para ayuda de un comando específico"
+    )
+
+
+if _V2:
+
+    class LayoutCategorySelect(discord.ui.Select):
+        def __init__(self, layout: "HelpLayout"):
+            self.layout = layout
+            options = [
+                discord.SelectOption(label="Inicio", value="__home__", description="Volver al menú principal", emoji=HOME_EMOJI),
+            ] + [
+                discord.SelectOption(
+                    label=data["label"], value=key, description=data["description"][:100],
+                    emoji=CATEGORY_EMOJIS.get(key),
+                )
+                for key, data in _visible_categories().items()
+            ]
+            super().__init__(placeholder="Selecciona una categoría...", options=options)
+
+        async def callback(self, interaction: discord.Interaction):
+            layout = self.layout
+            if layout.is_expired():
+                return await interaction.response.send_message(
+                    embed=discord.Embed(description=f"Help menu expired. Run `{layout.prefix}help` again.", color=0x2b2d31),
+                    ephemeral=True,
+                )
+            key = self.values[0]
+            new_layout = HelpLayout(
+                layout.bot, layout.guild, layout.prefix,
+                None if key == "__home__" else key, created_at=layout.created_at,
+            )
+            await interaction.response.edit_message(view=new_layout)
+
+    class HelpLayout(discord.ui.LayoutView):
+        def __init__(self, bot: discord.Client, guild: discord.Guild, prefix: str, cat_key: str | None = None, created_at=None):
+            super().__init__(timeout=None)  # el "timeout" real lo maneja is_expired()
+            self.bot = bot
+            self.guild = guild
+            self.prefix = prefix
+            self.created_at = created_at or discord.utils.utcnow()
+            self.message = None
+
+            thumb = _guild_icon(guild) or _me(bot, guild).display_avatar.url
+            if cat_key is None:
+                title = "## __Help Commands__"
+                body = _overview_body(bot, prefix)
+            else:
+                title = f"## {_category_title(cat_key)}"
+                body = _category_body(cat_key)
+
+            container = discord.ui.Container()
+            container.add_item(discord.ui.Section(
+                discord.ui.TextDisplay(title),
+                accessory=discord.ui.Thumbnail(thumb),
+            ))
+            container.add_item(discord.ui.Separator())
+            container.add_item(discord.ui.TextDisplay(body))
+            container.add_item(discord.ui.Separator())
+            container.add_item(discord.ui.ActionRow(LayoutCategorySelect(self)))
+            container.add_item(discord.ui.Separator())
+            container.add_item(discord.ui.ActionRow(
+                discord.ui.Button(label="Support Server", url=SUPPORT_SERVER_URL, style=discord.ButtonStyle.link),
+                discord.ui.Button(label="Bot Invite", url=_bot_invite_url(bot), style=discord.ButtonStyle.link),
+            ))
+            self.add_item(container)
+
+        def is_expired(self) -> bool:
+            return (discord.utils.utcnow() - self.created_at).total_seconds() > HELP_TTL_SECONDS
+
+
 class Help(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
+    async def _send_help(self, ctx, prefix: str, cat_key: str | None):
+        """Manda el help con el diseño nuevo; si no se puede, con el de embed de siempre."""
+        if _V2:
+            try:
+                layout = HelpLayout(self.bot, ctx.guild, prefix, cat_key)
+                layout.message = await ctx.send(view=layout)
+                return
+            except Exception:
+                log.warning("No se pudo mandar el help con el diseño nuevo; se usa el de embed", exc_info=True)
+
+        if cat_key is None:
+            embed = _build_overview_embed(self.bot, ctx.guild, prefix)
+        else:
+            embed = _build_category_embed(self.bot, ctx.guild, cat_key, prefix)
+        view = HelpView(self.bot, ctx.guild, prefix)
+        view.message = await ctx.send(embed=embed, view=view)
+
     @commands.command(name="help", aliases=["h", "commands"])
     async def help_command(self, ctx, *, category: str = None):
-        """Muestra la ayuda general o de una categoría específica."""
+        """Muestra la ayuda general, la de una categoría o la de un comando."""
         config = db.get_guild(ctx.guild.id)
         prefix = config.get("prefix", ",")
 
         if category is None:
-            embed = _build_overview_embed(self.bot, ctx.guild, prefix)
-            view = HelpView(self.bot, ctx.guild, prefix)
-            view.message = await ctx.send(embed=embed, view=view)
-            return
+            return await self._send_help(ctx, prefix, None)
 
-        cat_key = category.lower().strip()
-        cat_key = ALIASES.get(cat_key, cat_key)
+        text = category.strip()
+        cat_key = ALIASES.get(text.lower(), text.lower())
 
-        if cat_key not in _visible_categories():
-            available = " · ".join(f"`{k}`" for k in _visible_categories())
-            e = discord.Embed(
-                description=f"Categoría `{category}` no encontrada.\nDisponibles: {available}",
-                color=0x2b2d31,
-            )
-            e.set_author(name=f"{_me(self.bot, ctx.guild).display_name} Help", icon_url=_me(self.bot, ctx.guild).display_avatar.url)
-            return await ctx.send(embed=e)
+        # 1) Categoría
+        if cat_key in _visible_categories():
+            return await self._send_help(ctx, prefix, cat_key)
 
-        embed = _build_category_embed(self.bot, ctx.guild, cat_key, prefix)
-        view = HelpView(self.bot, ctx.guild, prefix)
-        view.message = await ctx.send(embed=embed, view=view)
+        # 2) Comando (",help ban", ",help fakepermissions add")
+        cmd = self.bot.get_command(text.lstrip(prefix).strip())
+        if cmd is not None:
+            from cmd_help import build_command_card
+            return await ctx.send(embed=build_command_card(ctx, cmd))
+
+        # 3) Nada coincide
+        available = " · ".join(f"`{k}`" for k in _visible_categories())
+        e = discord.Embed(
+            description=f"`{text}` no es una categoría ni un comando.\nCategorías: {available}",
+            color=0x2b2d31,
+        )
+        e.set_author(name=f"{_me(self.bot, ctx.guild).display_name} Help", icon_url=_me(self.bot, ctx.guild).display_avatar.url)
+        await ctx.send(embed=e)
 
 
 async def setup(bot):
