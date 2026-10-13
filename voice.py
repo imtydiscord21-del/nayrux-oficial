@@ -24,6 +24,7 @@ Panel (botones) + comandos de texto equivalentes:
   ,voice claim
 """
 
+import emojis as E
 import discord
 from discord.ext import commands
 from discord.http import Route
@@ -38,24 +39,24 @@ log = logging.getLogger("antinuke.voice")
 # bot (Developer Portal → tu App → Emojis), solo reemplaza cada valor de aquí
 # por el formato "<:nombre:id_del_emoji>" y el panel los usa automáticamente.
 EMOJI = {
-    "lock": "<:lock:1551304227635204126>",
-    "unlock": "<:unlock:1551304354391269456>",
-    "hide": "<:nover:1551304325681254480>",
-    "reveal": "<:ver:1551304364025712640>",
-    "activity": "<:pantalla:1551304342496088064>",
-    "increase": "<:mas:1551304273755639911>",
-    "decrease": "<:menos:1551304286481289346>",
-    "disconnect": "<:martillo:1551304262934601951>",
-    "claim": "<:microfono:1551304296266600580>",
-    "info": "<:notas:1551304312708407418>",
+    "lock": E.VM_LOCK,
+    "unlock": E.VM_UNLOCK,
+    "hide": E.VM_NOVER,
+    "reveal": E.VM_VER,
+    "activity": E.VM_PANTALLA,
+    "increase": E.VM_MAS,
+    "decrease": E.VM_MENOS,
+    "disconnect": E.VM_MARTILLO,
+    "claim": E.VM_MICROFONO,
+    "info": E.VM_NOTAS,
 }
 
 # Logo de marca (montaña+banderín), servido desde la CDN de emojis de Discord
-BRAND_ICON_URL = "https://cdn.discordapp.com/emojis/1551304248803856504.png"
+BRAND_ICON_URL = E.LOGO_URL or "https://cdn.discordapp.com/emojis/1551304248803856504.png"
 
 # check.png / x.png subidos como emojis de la app:
-EMOJI_SUCCESS = "<:check:1542315458882179142>"
-EMOJI_ERROR = "<:x_:1542315470643003442>"
+EMOJI_SUCCESS = E.EMOJI_SUCCESS
+EMOJI_ERROR = E.EMOJI_ERROR
 
 
 def _success_embed(text: str) -> discord.Embed:
