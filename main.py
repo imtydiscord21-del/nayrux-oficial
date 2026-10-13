@@ -5,6 +5,7 @@ import os
 import logging
 from config import db, DEFAULT_PREFIX
 from webhook_utils import send_via_webhook
+import emojis
 from cmd_help import build_command_card
 from fakepermissions import install_fake_permissions
 
@@ -61,6 +62,9 @@ class AntiNukeBot(commands.Bot):
         return await super().get_context(message, cls=cls)
 
     async def setup_hook(self):
+        # Emojis personalizados desde tu servidor (EMOJI_GUILD_ID); debe ir antes de cargar los cogs
+        await emojis.load_from_guild(self)
+
         cogs = [
             "backup",
             "antinuke",
@@ -104,6 +108,7 @@ class AntiNukeBot(commands.Bot):
             "boostmsg",
             "afk",
             "info_extra",
+            "emoji_setup",
         ]
         for cog in cogs:
             try:
