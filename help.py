@@ -599,27 +599,42 @@ def _build_category_embed(bot: discord.Client, guild: discord.Guild, cat_key: st
 HELP_TTL_SECONDS = 120
 
 
-HOME_EMOJI = discord.PartialEmoji(name="home", id=1552752918879408208)
-
-CATEGORY_EMOJIS = {
-    "automation": discord.PartialEmoji(name="automation", id=1552752811232600064),
-    "integrations": discord.PartialEmoji(name="integrations", id=1552752969655656538),
-    "security": discord.PartialEmoji(name="security", id=1552753042091151450),
-    "moderacion": discord.PartialEmoji(name="moderacion", id=1552753013481939005),
-    "configuracion": discord.PartialEmoji(name="configuracion", id=1552752857420406905),
-    "whitelist": discord.PartialEmoji(name="whitelist", id=1552753068431515709),
-    "voz": discord.PartialEmoji(name="voz", id=1552753057924780072),
-    "bienvenidas": discord.PartialEmoji(name="bienvenidas", id=1552752845365714965),
-    "invitaciones": discord.PartialEmoji(name="invitaciones", id=1552752989264158843),
-    "giveaways": discord.PartialEmoji(name="giveaways", id=1552752905906425856),
-    "imagenes": discord.PartialEmoji(name="imagenes", id=1552752937527410830),
-    "autoresponder": discord.PartialEmoji(name="autoresponder", id=1552752822099906630),
-    "embeds": discord.PartialEmoji(name="embeds", id=1552752870938640574),
-    "information": discord.PartialEmoji(name="information", id=1552752951137927198),
-    "emoji": discord.PartialEmoji(name="emoji", id=1552752889796108308),
-    "backup": discord.PartialEmoji(name="backup", id=1552752833856806922),
-    "premium": discord.PartialEmoji(name="premium", id=1552753026563973150),
+# Icono de cada categoría = emoji con ese NOMBRE en tu servidor de emojis (EMOJI_GUILD_ID).
+# Si el emoji no existe, esa categoría sale sin icono.
+CATEGORY_EMOJI_NAMES = {
+    "home": "home",
+    "automation": "autorole",
+    "integrations": "dev",
+    "security": "security",
+    "moderacion": "moderation",
+    "configuracion": "settings",
+    "whitelist": "approve",
+    "voz": "voicemaster",
+    "bienvenidas": "welcome",
+    "boost": "diamond",
+    "invitaciones": "annc",
+    "giveaways": "gw",
+    "autoresponder": "suggestions",
+    "ia": "ai",
+    "embeds": "embed",
+    "information": "info",
+    "afk": "afk",
+    "emoji": "emoji",
+    "backup": "backups",
+    "premium": "premium",
 }
+
+
+def _cat_emoji(key: str):
+    """Emoji de una categoría (o de 'home') para el menú, o None si no existe en el servidor."""
+    import emojis
+    text = emojis.ALL.get(CATEGORY_EMOJI_NAMES.get(key, ""))
+    if not text:
+        return None
+    try:
+        return discord.PartialEmoji.from_str(text)
+    except Exception:
+        return None
 
 
 class CategorySelect(discord.ui.Select):
@@ -629,11 +644,11 @@ class CategorySelect(discord.ui.Select):
         self.prefix = prefix
         self.outer_view = view
         options = [
-            discord.SelectOption(label="Inicio", value="__home__", description="Volver al menú principal", emoji=HOME_EMOJI),
+            discord.SelectOption(label="Inicio", value="__home__", description="Volver al menú principal", emoji=_cat_emoji("home")),
         ] + [
             discord.SelectOption(
                 label=data["label"], value=key, description=data["description"][:100],
-                emoji=CATEGORY_EMOJIS.get(key),
+                emoji=_cat_emoji(key),
             )
             for key, data in _visible_categories().items()
         ]
@@ -733,11 +748,11 @@ if _V2:
         def __init__(self, layout: "HelpLayout"):
             self.layout = layout
             options = [
-                discord.SelectOption(label="Inicio", value="__home__", description="Volver al menú principal", emoji=HOME_EMOJI),
+                discord.SelectOption(label="Inicio", value="__home__", description="Volver al menú principal", emoji=_cat_emoji("home")),
             ] + [
                 discord.SelectOption(
                     label=data["label"], value=key, description=data["description"][:100],
-                    emoji=CATEGORY_EMOJIS.get(key),
+                    emoji=_cat_emoji(key),
                 )
                 for key, data in _visible_categories().items()
             ]
