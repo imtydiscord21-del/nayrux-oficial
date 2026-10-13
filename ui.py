@@ -13,7 +13,7 @@ solo hay que tocar este archivo.
 
 import discord
 
-from emojis import CHECK, REMOVE, DENY
+import emojis
 
 COLOR_SUCCESS = 0x57F287
 COLOR_WARN = 0xFEE75C
@@ -26,15 +26,15 @@ def _line(ctx, emoji: str, text: str) -> str:
 
 
 async def success(ctx, text: str):
-    return await ctx.send(embed=discord.Embed(description=_line(ctx, CHECK, text), color=COLOR_SUCCESS))
+    return await ctx.send(embed=discord.Embed(description=_line(ctx, emojis.CHECK, text), color=COLOR_SUCCESS))
 
 
 async def warn(ctx, text: str):
-    return await ctx.send(embed=discord.Embed(description=_line(ctx, DENY, text), color=COLOR_WARN))
+    return await ctx.send(embed=discord.Embed(description=_line(ctx, emojis.DENY, text), color=COLOR_WARN))
 
 
 async def error(ctx, text: str):
-    return await ctx.send(embed=discord.Embed(description=_line(ctx, REMOVE, text), color=COLOR_ERROR))
+    return await ctx.send(embed=discord.Embed(description=_line(ctx, emojis.REMOVE, text), color=COLOR_ERROR))
 
 
 # ── Listas paginadas ─────────────────────────────────────────────────────────
