@@ -1,27 +1,105 @@
 """
-emojis.py — Constantes de los emojis personalizados de la app (Developer Portal
-→ Emojis). Completá los 4 IDs de abajo una vez que los subas ahí; el nombre
-tiene que coincidir EXACTO con el que le pusiste en el portal.
+emojis.py — Todos los emojis que usa el bot, en un solo lugar.
 
-Cómo usarlos en el código: from emojis import ADD, REMOVE, DENY, CHECK
-    await ctx.send(f"{CHECK} Listo.")
+Cada emoji tiene:
+  - una versión NORMAL (unicode) que siempre funciona, y
+  - una versión PERSONALIZADA que se toma de un servidor tuyo, buscándola por NOMBRE.
+
+Cómo activar los personalizados (sin copiar IDs):
+  1. Crea un servidor y sube ahí tus emojis, con los nombres de la columna "nombre" de abajo.
+  2. Mete al bot en ese servidor.
+  3. En Railway agrega la variable  EMOJI_GUILD_ID = <ID del servidor>  y reinicia.
+Al arrancar, el bot lee ese servidor y usa tus emojis; los que no encuentre quedan con la versión normal.
+Con ,emojicheck ves cuáles se encontraron y cuáles no.
+
+Uso en el código:  from emojis import CHECK, REMOVE      (o:  import emojis; emojis.CHECK)
 """
 
-# Reemplazá cada 0 por el ID real del emoji subido al Developer Portal.
-ADD = "<:add_blue:1551303940786626640>"        # cruz azul (+)
-REMOVE = "<:remove_red:1551303956825772114>"   # X roja
-DENY = "<:minus_blue:1551303971216556032>"     # línea azul (–) — "no permitido / desactivado"
-CHECK = "<:check_green:1551303984495468656>"   # tilde verde
+import logging
+import os
 
-# ── VoiceMaster ──────────────────────────────────────────────────────────────
-VM_LOCK = "<:lock:1551304227635204126>"
-VM_UNLOCK = "<:unlock:1551304354391269456>"
-VM_VER = "<:ver:1551304364025712640>"          # revelar canal
-VM_NOVER = "<:nover:1551304325681254480>"      # ocultar canal
-VM_PANTALLA = "<:pantalla:1551304342496088064>"
-VM_NOTAS = "<:notas:1551304312708407418>"
-VM_MICROFONO = "<:microfono:1551304296266600580>"
-VM_MENOS = "<:menos:1551304286481289346>"
-VM_MAS = "<:mas:1551304273755639911>"
-VM_MARTILLO = "<:martillo:1551304262934601951>"
-VM_LOGO = "<:logo:1551304248803856504>"
+import discord
+
+log = logging.getLogger("antinuke.emojis")
+
+# constante -> (nombres que se buscan en el servidor, versión normal)
+EMOJI_TABLE = {
+    "ADD":          (("add_blue", "increase"),            "➕"),   # +
+    "REMOVE":       (("deny", "remove_red"),              "❌"),   # X roja
+    "DENY":         (("minus_blue", "decrease"),          "➖"),   # −  "no permitido / desactivado"
+    "CHECK":        (("approve", "check_green", "check"), "✅"),   # tilde verde
+    "VM_LOCK":      (("lock",),                           "🔒"),
+    "VM_UNLOCK":    (("unlock",),                         "🔓"),
+    "VM_VER":       (("reveal", "ver"),                   "👁️"),   # mostrar canal
+    "VM_NOVER":     (("hide", "nover"),                   "🙈"),   # ocultar canal
+    "VM_PANTALLA":  (("rename", "pantalla"),              "🖥️"),
+    "VM_NOTAS":     (("info1", "notas"),                  "📝"),
+    "VM_MICROFONO": (("claim", "microfono"),              "🎙️"),
+    "VM_MENOS":     (("decrease", "menos"),               "➖"),
+    "VM_MAS":       (("increase", "mas"),                 "➕"),
+    "VM_MARTILLO":  (("kick", "martillo"),                "🔨"),
+    "VM_LOGO":      (("voicemaster", "logo"),             "🎧"),
+    "EMOJI_SUCCESS": (("approve", "check", "check_green"), "✅"),  # los usa voice.py
+    "EMOJI_ERROR":  (("deny", "x_", "remove_red"),        "❌"),
+}
+
+# Valores iniciales: las versiones normales
+globals().update({const: default for const, (_names, default) in EMOJI_TABLE.items()})
+
+# Imagen de marca del VoiceMaster (se reemplaza por la del emoji "logo" si existe en tu servidor)
+LOGO_URL = None
+
+# Qué se encontró en el servidor: {constante: "<:nombre:id>"} (lo llena load_from_guild)
+LOADED: dict = {}
+
+# TODOS los emojis del servidor por nombre en minúsculas: {"home": "<:home:123>"}. Sirve para los
+# iconos del help y para cualquier otro uso:  emojis.ALL.get("security")
+ALL: dict = {}
+GUILD_NAME: str | None = None
+
+
+async def load_from_guild(bot, guild_id=None) -> dict:
+    """
+    Lee los emojis del servidor EMOJI_GUILD_ID y reemplaza las versiones normales por las
+    personalizadas (por nombre). Llamar UNA vez al arrancar, ANTES de cargar los cogs.
+    Nunca lanza: si algo falla, se queda con los emojis normales.
+    """
+    global LOGO_URL, GUILD_NAME
+    raw = guild_id or os.getenv("EMOJI_GUILD_ID") or ""
+    try:
+        guild_id = int(raw)
+    except (TypeError, ValueError):
+        log.info("EMOJI_GUILD_ID no está configurado: se usan los emojis normales")
+        return {}
+
+    try:
+        guild = await bot.fetch_guild(guild_id)
+        server_emojis = await guild.fetch_emojis()
+    except discord.HTTPException as e:
+        log.warning(f"No pude leer los emojis del servidor {guild_id} ({e}). ¿El bot está dentro de ese servidor?")
+        return {}
+    except Exception:
+        log.exception("Falló la lectura de emojis; se usan los normales")
+        return {}
+
+    GUILD_NAME = getattr(guild, "name", None)
+    by_name = {e.name.lower(): e for e in server_emojis if getattr(e, "available", True)}
+    found = {}
+    for const, (names, _default) in EMOJI_TABLE.items():
+        for name in names:
+            emoji = by_name.get(name.lower())
+            if emoji is not None:
+                globals()[const] = str(emoji)
+                found[const] = str(emoji)
+                if const == "VM_LOGO":
+                    LOGO_URL = str(emoji.url)
+                break
+
+    LOADED.clear()
+    LOADED.update(found)
+    ALL.clear()
+    ALL.update({name: str(e) for name, e in by_name.items()})
+    missing = [c for c in EMOJI_TABLE if c not in found]
+    log.info(f"Emojis personalizados: {len(found)} cargados desde '{GUILD_NAME}'"
+             + (f"; usando el emoji normal en: {', '.join(missing)}" if missing else ""))
+    return found
