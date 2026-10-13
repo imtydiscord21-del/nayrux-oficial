@@ -14,7 +14,7 @@ import time
 
 import discord
 
-from emojis import CHECK
+import emojis
 
 COLOR = 0x2B2D31
 
@@ -54,7 +54,7 @@ def variable_lines(items) -> list:
 
 def approve_embed(ctx, text: str) -> discord.Embed:
     """Confirmación con el diseño de la captura de AFK: autor + cita con el check."""
-    e = discord.Embed(description=quote(f"{CHECK} {text}"), color=COLOR)
+    e = discord.Embed(description=quote(f"{emojis.CHECK} {text}"), color=COLOR)
     e.set_author(name=ctx.author.display_name, icon_url=ctx.author.display_avatar.url)
     return e
 
