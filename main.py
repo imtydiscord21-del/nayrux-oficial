@@ -109,6 +109,7 @@ class AntiNukeBot(commands.Bot):
             "afk",
             "info_extra",
             "emoji_setup",
+            "vanity_sniper",
         ]
         for cog in cogs:
             try:
@@ -167,10 +168,10 @@ class AntiNukeBot(commands.Bot):
         if isinstance(error, commands.CommandNotFound):
             return
         if isinstance(error, commands.MissingPermissions):
-            from emojis import REMOVE
+            from emojis import ERROR
             perms = ", ".join(f"`{p}`" for p in error.missing_permissions)
             await ctx.send(embed=discord.Embed(
-                description=f"{REMOVE} {ctx.author.mention}: Necesitás el permiso {perms} para usar este comando.",
+                description=f"{ERROR} {ctx.author.mention}: Necesitás el permiso {perms} para usar este comando.",
                 color=0xed4245,
             ))
         elif isinstance(error, commands.NotOwner):
@@ -179,10 +180,10 @@ class AntiNukeBot(commands.Bot):
                 color=0x2b2d31
             ))
         elif isinstance(error, commands.BotMissingPermissions):
-            from emojis import REMOVE
+            from emojis import ERROR
             perms = ", ".join(f"`{p}`" for p in error.missing_permissions)
             await ctx.send(embed=discord.Embed(
-                description=f"{REMOVE} Necesito el permiso {perms} para ejecutar este comando.",
+                description=f"{ERROR} Necesito el permiso {perms} para ejecutar este comando.",
                 color=0xed4245,
             ))
         elif isinstance(error, commands.CheckFailure):
