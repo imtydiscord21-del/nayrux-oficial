@@ -428,6 +428,16 @@ CATEGORIES["security"]["sections"].append((
     ], "Tus moderadores usan los comandos del bot sin tener el permiso real de Discord. Solo el dueño del servidor.",
 ))
 
+CATEGORIES["security"]["sections"].append((
+    "Reclamar vanity", [
+        ",vanityclaim add <código>",
+        ",vanityclaim remove <código>",
+        ",vanityclaim list",
+        ",vanityclaim channel <canal>",
+        ",vanityclaim check <código>",
+    ], "Vigila una vanity y la pone sola en tu servidor cuando se libere, avisando al dueño. Solo el dueño del servidor.",
+))
+
 CATEGORIES["integrations"]["sections"].append((
     "Instagram", [
         ",instagram add <canal> <usuario>",
@@ -526,6 +536,7 @@ ALIASES = {
     "wlc": "bienvenidas", "boostmsg": "boost", "boost": "boost", "boosts": "boost",
     "afk": "afk", "afklist": "afk",
     "fakepermissions": "security", "fakeperms": "security", "fp": "security",
+    "vanityclaim": "security", "vsnipe": "security",
     "instagram": "integrations", "ig": "integrations",
     "embed": "embeds",
     "ai": "ia", "ia": "ia",
