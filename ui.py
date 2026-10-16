@@ -34,7 +34,7 @@ async def warn(ctx, text: str):
 
 
 async def error(ctx, text: str):
-    return await ctx.send(embed=discord.Embed(description=_line(ctx, emojis.REMOVE, text), color=COLOR_ERROR))
+    return await ctx.send(embed=discord.Embed(description=_line(ctx, emojis.ERROR, text), color=COLOR_ERROR))
 
 
 # ── Listas paginadas ─────────────────────────────────────────────────────────
