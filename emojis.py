@@ -12,7 +12,7 @@ Cómo activar los personalizados (sin copiar IDs):
 Al arrancar, el bot lee ese servidor y usa tus emojis; los que no encuentre quedan con la versión normal.
 Con ,emojicheck ves cuáles se encontraron y cuáles no.
 
-Uso en el código:  from emojis import CHECK, REMOVE      (o:  import emojis; emojis.CHECK)
+Uso en el código:  from emojis import CHECK, ERROR      (o:  import emojis; emojis.CHECK)
 """
 
 import logging
@@ -25,7 +25,8 @@ log = logging.getLogger("antinuke.emojis")
 # constante -> (nombres que se buscan en el servidor, versión normal)
 EMOJI_TABLE = {
     "ADD":          (("add_blue", "increase"),            "➕"),   # +
-    "REMOVE":       (("deny", "remove_red"),              "❌"),   # X roja
+    "REMOVE":       (("minus_blue", "decrease"),          "➖"),   # − azul: "se quitó / removed"
+    "ERROR":        (("deny", "remove_red"),              "❌"),   # X roja: errores
     "DENY":         (("minus_blue", "decrease"),          "➖"),   # −  "no permitido / desactivado"
     "CHECK":        (("approve", "check_green", "check"), "✅"),   # tilde verde
     "VM_LOCK":      (("lock",),                           "🔒"),
