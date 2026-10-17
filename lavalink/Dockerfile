@@ -5,15 +5,15 @@ FROM ghcr.io/lavalink-devs/lavalink:4.2.2
 USER root
 
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends python3 curl ca-certificates && \
+    apt-get install -y --no-install-recommends curl ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
 COPY --from=deno /deno /usr/local/bin/deno
 
 RUN curl --fail --location --silent --show-error \
-      https://github.com/yt-dlp/yt-dlp/releases/download/2026.08.19/yt-dlp \
+      https://github.com/yt-dlp/yt-dlp/releases/download/2026.08.19/yt-dlp_linux \
       --output /usr/local/bin/yt-dlp && \
-    echo '1fa6733c37ea6fb51c99ad8fe785e7b7e5f3246c9b980230329d4fb72ed8d4d6  /usr/local/bin/yt-dlp' | sha256sum --check && \
+    echo '58162f9bfdc27458ea47bfcb311cf47028f17d8154a8bf7d689861d46399230a  /usr/local/bin/yt-dlp' | sha256sum --check && \
     chmod 0755 /usr/local/bin/yt-dlp
 
 COPY application.yml /opt/Lavalink/application.yml
