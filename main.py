@@ -3,6 +3,8 @@ from discord.ext import commands, tasks
 import asyncio
 import os
 import logging
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from config import db, DEFAULT_PREFIX
 from webhook_utils import send_via_webhook
 import emojis
@@ -44,6 +46,7 @@ class AntiNukeBot(commands.Bot):
         )
         self.db = db
         self._status_index = 0
+        self._guild_status_index = 0
         self._status_override = None
 
     def _load_owners(self):
@@ -169,12 +172,31 @@ class AntiNukeBot(commands.Bot):
             status, activity = self._status_override
             await self.change_presence(status=status, activity=activity)
             return
+
+        rotation = self._status_index % 3
+        self._status_index += 1
+        if rotation == 0:
+            activity = discord.CustomActivity(name="/zaay", emoji="📎")
+        elif rotation == 1:
+            guilds = sorted(self.guilds, key=lambda guild: guild.id)
+            if guilds:
+                guild = guilds[self._guild_status_index % len(guilds)]
+                self._guild_status_index += 1
+                prefix, suffix = "Cuidando ", " con mi glock"
+                guild_name = guild.name[:128 - len(prefix) - len(suffix)]
+                activity = discord.CustomActivity(name=f"{prefix}{guild_name}{suffix}")
+            else:
+                activity = discord.CustomActivity(name="Cuidando servidores con mi glock")
+        else:
+            mexico_time = datetime.now(ZoneInfo("America/Mexico_City"))
+            activity = discord.CustomActivity(
+                name=mexico_time.strftime("%H:%M:%S"),
+                emoji="🕒",
+            )
+
         await self.change_presence(
             status=discord.Status.online,
-            activity=discord.CustomActivity(
-                name="Usa ,help · ,play · ,ban",
-                emoji="✨",
-            ),
+            activity=activity,
         )
 
     @rotate_status.before_loop
