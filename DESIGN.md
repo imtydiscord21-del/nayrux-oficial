@@ -2,13 +2,13 @@
 
 ## Dirección
 
-La portada se compone como una hoja editorial de turno: identidad y estado reales del bot en una placa oscura que fluye con la página al desplazarse, y contenido de moderación en una superficie clara. Las vistas operativas comparten esta identidad, con el constructor como herramienta de dos paneles en escritorio y de panel intercambiable en móvil.
+La portada se compone como una hoja editorial de turno: identidad y estado reales del bot en una placa negra que fluye con la página al desplazarse, junto a contenido de moderación sobre superficies negras y carbón. Las vistas operativas comparten esta identidad, con el constructor como herramienta de dos paneles en escritorio y de panel intercambiable en móvil.
 
 ## Tokens
 
-- Fondo: `#f7f6f9`; superficies: `#ffffff`.
-- Tinta: `#111014`; superficie oscura: `#0a090d`; texto oscuro: `#fbfaff`.
-- Acción violeta: `#7138e8`; violeta suave: `#b99bff`; violeta pálido: `#eee7ff`.
+- Fondo: `#09080c`; superficies carbón: `#15131a` y `#19161f`.
+- Texto: `#f5f2f9`; texto secundario: `#bdb7c4`; negro profundo: `#050407`.
+- Acción violeta: `#7138e8`; violeta suave: `#b99bff`; violeta pálido oscuro: `#271d3a`.
 - Estado: verde `#37c987` para conexión y rojo `#ec7080` para desconexión.
 - Tipografía de interfaz: IBM Plex Sans; titulares editoriales: Instrument Serif con Georgia como respaldo.
 - Radios base: `16px`; ritmo adaptable mediante `clamp()`.

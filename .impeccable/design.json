@@ -3,14 +3,14 @@
   "direction": "Hoja editorial de turno en vivo para administradores de Discord",
   "tokens": {
     "color": {
-      "paper": "#f7f6f9",
-      "panel": "#ffffff",
-      "ink": "#111014",
+      "paper": "#09080c",
+      "panel": "#15131a",
+      "ink": "#f5f2f9",
       "dark": "#0a090d",
       "darkInk": "#fbfaff",
       "violet": "#7138e8",
       "violetBright": "#b99bff",
-      "violetPale": "#eee7ff",
+      "violetPale": "#271d3a",
       "online": "#37c987",
       "offline": "#ec7080"
     },

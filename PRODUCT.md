@@ -34,7 +34,7 @@ La experiencia es en español. Los administradores usan la web desde escritorio 
 
 ## Brand Commitments
 
-El nombre es Zaay (algunas referencias técnicas existentes usan `Zayy`). La interfaz debe priorizar negro y blanco con violeta eléctrico; se permiten colores complementarios de forma medida. La acción principal de la portada es invitar a Zaay.
+El nombre es Zaay (algunas referencias técnicas existentes usan `Zayy`). La interfaz usa fondos negros y superficies carbón, texto blanco y violeta eléctrico como acento; verde y rojo se reservan para estados. La acción principal de la portada es invitar a Zaay.
 
 ## Evidence on Hand
 

@@ -12,9 +12,9 @@
 
 ## Dirección elegida
 
-El turno en vivo de Zaay se vuelve una hoja editorial para el moderador. En Inicio, el estado, avatar, servidores, miembros y comandos reales de Zaay permanecen reunidos en una pieza oscura y vertical mientras una columna clara presenta la oferta, la prueba y la acción de invitar. No se simulan incidentes ni se convierten los números en una promesa de seguridad. Comandos, Estado y Embeds siguen siendo rutas operativas dentro del mismo lenguaje visual.
+El turno en vivo de Zaay se vuelve una hoja editorial para el moderador. En Inicio, el estado, avatar, servidores, miembros y comandos reales de Zaay permanecen reunidos en una pieza oscura y vertical mientras una columna oscura presenta la oferta, la prueba y la acción de invitar. No se simulan incidentes ni se convierten los números en una promesa de seguridad. Comandos, Estado y Embeds siguen siendo rutas operativas dentro del mismo lenguaje visual.
 
-Base negra y blanco cálido con violeta eléctrico como única tinta de acción y anotación. El verde/rojo solo indica estado confirmado online/offline. Evitar gradientes, halos, mosaicos de tarjetas homogéneas y animación repetida. Navegación compacta arriba; panel de identidad alto en Inicio; contenido alterna listas, tablas editoriales y pantallas Discord en lugar de repetir una cuadrícula de tarjetas.
+Base negra y carbón, texto claro y violeta eléctrico como tinta de acción y anotación. El verde/rojo solo indica estado confirmado online/offline. Evitar gradientes, halos, mosaicos de tarjetas homogéneas y animación repetida. Navegación compacta arriba; panel de identidad alto en Inicio; contenido alterna listas, tablas editoriales y pantallas Discord en lugar de repetir una cuadrícula de tarjetas.
 
 ### Idea y acción viva
 
