@@ -6,7 +6,7 @@ RUN git init . \
     && git remote add origin https://github.com/ashton045/youtube-source.git \
     && git fetch --depth 1 origin "$YOUTUBE_SOURCE_COMMIT" \
     && git checkout --detach FETCH_HEAD
-RUN ./gradlew :plugin:shadowJar --no-daemon
+RUN ./gradlew :plugin:jar --no-daemon
 
 FROM ghcr.io/lavalink-devs/lavalink:4.2.2
 
