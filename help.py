@@ -447,6 +447,15 @@ CATEGORIES["integrations"]["sections"].append((
     ], "Avisa en un canal cuando una cuenta de Instagram publica.",
 ))
 
+CATEGORIES["premium"]["sections"].append((
+    "Anuncios de actualizaciones (solo dueño del bot)", [
+        ",updates channel <canal>",
+        ",updates status",
+        ",updates test",
+        ",updates off",
+    ], "Cada vez que subas cambios a GitHub, el bot los anuncia en el canal que elijas.",
+))
+
 _NEW_CATEGORIES = {
     "boost": {
         "label": "Boost",
@@ -536,7 +545,7 @@ ALIASES = {
     "wlc": "bienvenidas", "boostmsg": "boost", "boost": "boost", "boosts": "boost",
     "afk": "afk", "afklist": "afk",
     "fakepermissions": "security", "fakeperms": "security", "fp": "security",
-    "vanityclaim": "security", "vsnipe": "security",
+    "vanityclaim": "security", "vsnipe": "security", "updates": "premium",
     "instagram": "integrations", "ig": "integrations",
     "embed": "embeds",
     "ai": "ia", "ia": "ia",
