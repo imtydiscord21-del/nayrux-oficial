@@ -315,6 +315,7 @@ class GithubUpdates(commands.Cog):
     async def cog_load(self):
         app = web.Application(client_max_size=MAX_BODY_BYTES)
         app.router.add_get("/", self.website)
+        app.router.add_get("/animejs.min.js", self.animejs_asset)
         app.router.add_get("/health", self.health)
         app.router.add_get("/api/status", self.public_status)
         app.router.add_get("/api/commands", self.public_commands)
@@ -347,6 +348,12 @@ class GithubUpdates(commands.Cog):
 
     async def website(self, request):
         return web.FileResponse(WEBSITE_DIR / "index.html")
+
+    async def animejs_asset(self, request):
+        return web.FileResponse(
+            WEBSITE_DIR / "vendor-animejs-4.5.0.js",
+            headers={"Cache-Control": "public, max-age=31536000, immutable"},
+        )
 
     async def public_status(self, request):
         user = self.bot.user

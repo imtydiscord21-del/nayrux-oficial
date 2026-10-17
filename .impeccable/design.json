@@ -16,8 +16,9 @@
     },
     "font": {
       "body": "IBM Plex Sans",
-      "display": "Instrument Serif",
-      "displayFallback": "Georgia"
+      "display": "IBM Plex Sans",
+      "displayFallback": "Segoe UI",
+      "displayWeight": 800
     },
     "radius": {
       "base": "16px",

@@ -10,7 +10,7 @@ La portada se compone como una hoja editorial de turno: identidad y estado reale
 - Texto: `#f5f2f9`; texto secundario: `#bdb7c4`; negro profundo: `#050407`.
 - Acción violeta: `#7138e8`; violeta suave: `#b99bff`; violeta pálido oscuro: `#271d3a`.
 - Estado: verde `#37c987` para conexión y rojo `#ec7080` para desconexión.
-- Tipografía de interfaz: IBM Plex Sans; titulares editoriales: Instrument Serif con Georgia como respaldo.
+- Tipografía: IBM Plex Sans; titulares principales y de las tarjetas en peso 800 para una voz firme.
 - Radios base: `16px`; ritmo adaptable mediante `clamp()`.
 
 ## Interacción y accesibilidad
@@ -18,7 +18,8 @@ La portada se compone como una hoja editorial de turno: identidad y estado reale
 - La acción principal de la portada es invitar Zaay.
 - El constructor mantiene la vista previa sincronizada, la identidad real del bot y el JSON revisable/copible.
 - En móvil, Editar y Vista previa son controles accesibles con estado `aria-pressed`; el panel Editar aparece inicialmente. La portada pasa a una sola columna en tabletas estrechas y las estadísticas se ordenan en filas completas en teléfono.
-- Movimiento breve para navegación y aparición de vistas previas; `prefers-reduced-motion` elimina transiciones y animación no esencial.
+- Anime.js anima el titular principal por caracteres y revela una vez las secciones promocionales al entrar en pantalla. Los controles mantienen respuestas breves; los campos del editor no se desplazan al usarlos.
+- `prefers-reduced-motion` deja el texto y las secciones visibles sin movimiento.
 - Foco visible de 3px, estados de validación y carga, y etiquetas de límites visibles.
 
 ## Componentes propios
