@@ -13,7 +13,7 @@ COPY --from=deno /deno /usr/local/bin/deno
 RUN curl --fail --location --silent --show-error \
       https://github.com/yt-dlp/yt-dlp/releases/download/2026.08.19/yt-dlp \
       --output /usr/local/bin/yt-dlp && \
-    echo 'a63701f30755cb4d9317950d69703e9d751d490cb1b7059e1bb501a353fe7dcb  /usr/local/bin/yt-dlp' | sha256sum --check && \
+    echo '1fa6733c37ea6fb51c99ad8fe785e7b7e5f3246c9b980230329d4fb72ed8d4d6  /usr/local/bin/yt-dlp' | sha256sum --check && \
     chmod 0755 /usr/local/bin/yt-dlp
 
 COPY application.yml /opt/Lavalink/application.yml
