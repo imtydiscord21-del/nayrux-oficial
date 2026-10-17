@@ -2,26 +2,26 @@
 
 ## Dirección
 
-La portada se compone como una hoja editorial de turno: identidad y estado reales del bot en una placa negra que fluye con la página al desplazarse, junto a contenido de moderación sobre superficies negras y carbón. Las vistas operativas comparten esta identidad, con el constructor como herramienta de dos paneles en escritorio y de panel intercambiable en móvil.
+La experiencia sigue de cerca la composición de zayybot.xyz: fondo negro con una red tenue de estrellas, navegación centrada en una cápsula, avatar y nombre del bot centrados, métricas e información en tarjetas oscuras de bordes finos. El catálogo usa búsqueda y filtros en chips; el constructor presenta pestañas por tipo de contenido y una vista previa de Discord. El contenido, la identidad y las funciones siguen siendo los de Zaay.
 
 ## Tokens
 
-- Fondo: `#09080c`; superficies carbón: `#15131a` y `#19161f`.
-- Texto: `#f5f2f9`; texto secundario: `#bdb7c4`; negro profundo: `#050407`.
-- Acción violeta: `#7138e8`; violeta suave: `#b99bff`; violeta pálido oscuro: `#271d3a`.
-- Estado: verde `#37c987` para conexión y rojo `#ec7080` para desconexión.
-- Tipografía: IBM Plex Sans; titulares principales y de las tarjetas en peso 800 para una voz firme.
-- Radios base: `16px`; ritmo adaptable mediante `clamp()`.
+- Fondo: `#07080c`; superficies: `#0b0c10` y `#101116`.
+- Texto: `#f4f5f9`; texto secundario: `#9b9daa`.
+- Acción violeta: `#5865f2`; acento suave: `#8790ff`.
+- Estado: verde `#54d39a` para conexión y rojo `#f07583` para desconexión.
+- Tipografía: IBM Plex Sans; encabezados en pesos 700–800.
+- Radios: `16–24px`; ritmo adaptable mediante `clamp()`.
 
 ## Interacción y accesibilidad
 
-- La acción principal de la portada es invitar Zaay.
+- La acción principal de la portada es «Invitar a Zaay».
 - El constructor mantiene la vista previa sincronizada, la identidad real del bot y el JSON revisable/copible.
-- En móvil, Editar y Vista previa son controles accesibles con estado `aria-pressed`; el panel Editar aparece inicialmente. La portada pasa a una sola columna en tabletas estrechas y las estadísticas se ordenan en filas completas en teléfono.
+- En escritorio (900 px o más), el editor y la vista previa se muestran en paralelo. En tabletas y móviles, Editar y Vista previa son controles accesibles con estado `aria-pressed`; el panel Editar aparece inicialmente. La portada pasa a una sola columna en tabletas estrechas y las estadísticas se ordenan en filas completas en teléfono.
 - Anime.js anima el titular principal por caracteres y revela una vez las secciones promocionales al entrar en pantalla. Los controles mantienen respuestas breves; los campos del editor no se desplazan al usarlos.
 - `prefers-reduced-motion` deja el texto y las secciones visibles sin movimiento.
 - Foco visible de 3px, estados de validación y carga, y etiquetas de límites visibles.
 
 ## Componentes propios
 
-La placa de identidad vertical, la ficha de estado, las líneas de catálogo tipográficas y la tarjeta de embed que replica la presentación de Discord son patrones de este producto. Los colores de marca enmarcan la interfaz; el acento lateral del embed sigue el color editable que verá la persona en Discord.
+La constelación de fondo, el hero centrado, las tarjetas de funciones, los filtros del catálogo y el constructor con pestañas forman una composición consistente. La tarjeta del embed replica la presentación de Discord y su acento lateral sigue el color editable que verá la persona en Discord.
