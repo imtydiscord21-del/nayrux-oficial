@@ -2,7 +2,7 @@
 
 ## Dirección
 
-La portada se compone como una hoja editorial de turno: identidad y estado reales del bot en una placa oscura, y contenido de moderación en una superficie clara. Las vistas operativas comparten esta identidad, con el constructor como herramienta de dos paneles en escritorio y de panel intercambiable en móvil.
+La portada se compone como una hoja editorial de turno: identidad y estado reales del bot en una placa oscura que fluye con la página al desplazarse, y contenido de moderación en una superficie clara. Las vistas operativas comparten esta identidad, con el constructor como herramienta de dos paneles en escritorio y de panel intercambiable en móvil.
 
 ## Tokens
 
