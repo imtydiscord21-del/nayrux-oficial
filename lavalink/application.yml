@@ -41,6 +41,7 @@ plugins:
       - MWEB
       - WEB
       - WEBEMBEDDED
+      - TV
   soundy:
     enabled: true
 
