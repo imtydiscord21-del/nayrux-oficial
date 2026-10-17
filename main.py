@@ -44,6 +44,7 @@ class AntiNukeBot(commands.Bot):
         )
         self.db = db
         self._status_index = 0
+        self._status_override = None
 
     def _load_owners(self):
         owners = os.getenv("OWNER_IDS", "")
@@ -148,11 +149,15 @@ class AntiNukeBot(commands.Bot):
 
     @tasks.loop(seconds=20)
     async def rotate_status(self):
+        if self._status_override:
+            status, activity = self._status_override
+            await self.change_presence(status=status, activity=activity)
+            return
         statuses = [
-            (discord.ActivityType.watching, "nayrux.com"),
+            (discord.ActivityType.watching, "zayybot-production.up.railway.app"),
             (discord.ActivityType.watching, f"{len(self.guilds)} servidores"),
             (discord.ActivityType.playing, "Mencióname para ver mis comandos"),
-            (discord.ActivityType.competing, "seguridad de servidores"),
+            (discord.ActivityType.competing, "protección para tu comunidad"),
         ]
         activity_type, name = statuses[self._status_index % len(statuses)]
         self._status_index += 1
