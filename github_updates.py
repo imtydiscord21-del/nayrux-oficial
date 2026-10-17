@@ -42,7 +42,7 @@ import discord
 from aiohttp import ClientError, ClientSession, ClientTimeout, web
 from discord.ext import commands
 
-from config import db
+from config import DEFAULT_PREFIX, db
 from ui import success, error
 
 log = logging.getLogger("antinuke.github_updates")
@@ -358,6 +358,14 @@ class GithubUpdates(commands.Cog):
     async def public_status(self, request):
         user = self.bot.user
         ready = self.bot.is_ready() and user is not None
+        from help import CATEGORIES, HIDDEN_CATEGORIES
+
+        command_count = sum(
+            len(commands)
+            for key, data in CATEGORIES.items()
+            if key not in HIDDEN_CATEGORIES
+            for _, commands, _ in data["sections"]
+        )
         payload = {
             "online": ready,
             "name": user.name if user else "Zaay",
@@ -365,6 +373,10 @@ class GithubUpdates(commands.Cog):
             "guilds": len(self.bot.guilds) if ready else 0,
             "members": sum(guild.member_count or 0 for guild in self.bot.guilds) if ready else 0,
             "latency_ms": round(self.bot.latency * 1000) if ready else None,
+            "commands": command_count,
+            "cogs": len(self.bot.cogs),
+            "prefix": DEFAULT_PREFIX,
+            "shards": 1,
             "uptime_seconds": int(time.monotonic() - self.started_at),
             "checked_at": int(time.time()),
         }
