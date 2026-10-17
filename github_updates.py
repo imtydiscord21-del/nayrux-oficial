@@ -34,6 +34,8 @@ import logging
 import os
 from pathlib import Path
 import re
+import secrets
+from urllib.parse import urlencode
 import time
 
 import discord
@@ -49,6 +51,10 @@ SECRET = os.getenv("GITHUB_WEBHOOK_SECRET") or ""
 BRANCH = os.getenv("GITHUB_UPDATES_BRANCH", "main")
 STATE_KEY = "github_updates"
 WEBSITE_DIR = Path(__file__).resolve().parent / "website"
+DISCORD_CLIENT_ID = os.getenv("DISCORD_CLIENT_ID", "1559390674472931422")
+DISCORD_CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET", "")
+DISCORD_REDIRECT_URI = os.getenv("DISCORD_REDIRECT_URI", "https://zayy-bot-production.up.railway.app/api/auth/callback")
+DISCORD_API = "https://discord.com/api/v10"
 
 try:
     PORT = int(os.getenv("PORT", "8080"))
@@ -216,7 +222,7 @@ async def _commands_from_github_compare(payload: dict) -> tuple[list[dict], list
     url = f"https://api.github.com/repos/{repo}/compare/{before}...{after}"
     try:
         async with ClientSession(timeout=ClientTimeout(total=8)) as session:
-            async with session.get(url, headers={"Accept": "application/vnd.github+json", "User-Agent": "NayruxBot"}) as response:
+            async with session.get(url, headers={"Accept": "application/vnd.github+json", "User-Agent": "ZaayBot"}) as response:
                 if response.status != 200:
                     log.warning("GitHub compare respondió %s; anunciaré el resumen del commit sin detectar comandos", response.status)
                     return [], [], []
@@ -303,6 +309,8 @@ class GithubUpdates(commands.Cog):
         self.started_at = time.monotonic()
         self.deliveries: list = []          # ids de entregas ya procesadas (GitHub reintenta si tarda)
         self.last_event = None
+        self.oauth_states = {}
+        self.web_sessions = {}
 
     async def cog_load(self):
         app = web.Application(client_max_size=MAX_BODY_BYTES)
@@ -310,6 +318,14 @@ class GithubUpdates(commands.Cog):
         app.router.add_get("/health", self.health)
         app.router.add_get("/api/status", self.public_status)
         app.router.add_get("/api/commands", self.public_commands)
+        app.router.add_get("/api/auth/config", self.auth_config)
+        app.router.add_get("/api/auth/discord", self.auth_discord)
+        app.router.add_get("/api/auth/callback", self.auth_callback)
+        app.router.add_get("/api/auth/me", self.auth_me)
+        app.router.add_post("/api/auth/logout", self.auth_logout)
+        app.router.add_get("/api/discord/guilds", self.discord_guilds)
+        app.router.add_get("/api/discord/guilds/{guild_id}/channels", self.discord_channels)
+        app.router.add_post("/api/discord/send-embed", self.send_embed)
         if SECRET:
             app.router.add_post("/github", self.handle_github)
         else:
@@ -337,7 +353,7 @@ class GithubUpdates(commands.Cog):
         ready = self.bot.is_ready() and user is not None
         payload = {
             "online": ready,
-            "name": user.name if user else "Nayrux",
+            "name": user.name if user else "Zaay",
             "avatar": user.display_avatar.url if user else None,
             "guilds": len(self.bot.guilds) if ready else 0,
             "members": sum(guild.member_count or 0 for guild in self.bot.guilds) if ready else 0,
@@ -368,6 +384,168 @@ class GithubUpdates(commands.Cog):
                 sections.append({"title": title, "items": items, "note": note})
             categories.append({"id": key, "name": data["label"], "description": data["description"], "sections": sections})
         return web.json_response({"prefix": ",", "categories": categories}, headers={"Cache-Control": "no-store"})
+
+    def _session(self, request):
+        session_id = request.cookies.get("zaay_session", "")
+        session = self.web_sessions.get(session_id)
+        if not session or session["expires_at"] <= time.time():
+            self.web_sessions.pop(session_id, None)
+            return None
+        return session
+
+    async def _discord_request(self, method, path, *, token=None, data=None):
+        headers = {"Authorization": f"Bot {self.bot.http.token}"} if token is None else {"Authorization": f"Bearer {token}"}
+        async with ClientSession(timeout=ClientTimeout(total=12)) as session:
+            async with session.request(method, f"{DISCORD_API}{path}", headers=headers, data=data) as response:
+                payload = await response.json(content_type=None)
+                if response.status >= 400:
+                    raise web.HTTPBadGateway(text="Discord no pudo completar la solicitud.")
+                return payload
+
+    async def auth_config(self, request):
+        return web.json_response({"configured": bool(DISCORD_CLIENT_ID and DISCORD_CLIENT_SECRET), "redirect_uri": DISCORD_REDIRECT_URI})
+
+    async def auth_discord(self, request):
+        if not DISCORD_CLIENT_SECRET:
+            raise web.HTTPServiceUnavailable(text="Falta configurar DISCORD_CLIENT_SECRET en Railway.")
+        for state, created in list(self.oauth_states.items()):
+            if created < time.time() - 600:
+                self.oauth_states.pop(state, None)
+        state = secrets.token_urlsafe(32)
+        self.oauth_states[state] = time.time()
+        params = urlencode({
+            "client_id": DISCORD_CLIENT_ID,
+            "response_type": "code",
+            "redirect_uri": DISCORD_REDIRECT_URI,
+            "scope": "identify guilds",
+        })
+        raise web.HTTPFound(f"https://discord.com/oauth2/authorize?{params}&state={state}")
+
+    async def auth_callback(self, request):
+        state = request.query.get("state", "")
+        created = self.oauth_states.pop(state, None)
+        if not created or created < time.time() - 600 or request.query.get("iss") not in (None, "https://discord.com"):
+            raise web.HTTPFound("/#/embed-builder?oauth_error=state")
+        code = request.query.get("code")
+        if not code or not DISCORD_CLIENT_SECRET:
+            raise web.HTTPFound("/#/embed-builder?oauth_error=config")
+        form = {
+            "client_id": DISCORD_CLIENT_ID,
+            "client_secret": DISCORD_CLIENT_SECRET,
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": DISCORD_REDIRECT_URI,
+        }
+        try:
+            async with ClientSession(timeout=ClientTimeout(total=12)) as session:
+                async with session.post(f"{DISCORD_API}/oauth2/token", data=form) as response:
+                    token_data = await response.json(content_type=None)
+            if "access_token" not in token_data:
+                raise ValueError("Discord no devolvió token")
+            user = await self._discord_request("GET", "/users/@me", token=token_data["access_token"])
+        except (ClientError, asyncio.TimeoutError, ValueError, KeyError):
+            log.warning("Falló el inicio de sesión OAuth de Discord", exc_info=True)
+            raise web.HTTPFound("/#/embed-builder?oauth_error=exchange")
+
+        session_id = secrets.token_urlsafe(32)
+        csrf = secrets.token_urlsafe(24)
+        lifetime = min(int(token_data.get("expires_in", 3600)), 604800)
+        self.web_sessions[session_id] = {
+            "token": token_data["access_token"],
+            "expires_at": time.time() + lifetime,
+            "user_id": user["id"],
+            "username": user.get("global_name") or user.get("username", "Discord"),
+            "avatar": user.get("avatar"),
+            "csrf": csrf,
+        }
+        response = web.HTTPFound("/#/embed-builder?connected=1")
+        response.set_cookie("zaay_session", session_id, max_age=lifetime, httponly=True, secure=True, samesite="Lax", path="/")
+        return response
+
+    async def auth_me(self, request):
+        session = self._session(request)
+        if not session:
+            return web.json_response({"authenticated": False})
+        return web.json_response({"authenticated": True, "user": {"id": session["user_id"], "name": session["username"], "avatar": session["avatar"]}, "csrf": session["csrf"]}, headers={"Cache-Control": "no-store"})
+
+    async def auth_logout(self, request):
+        session = self._session(request)
+        if session and request.headers.get("X-CSRF-Token") != session["csrf"]:
+            raise web.HTTPForbidden(text="Solicitud no válida.")
+        session_id = request.cookies.get("zaay_session", "")
+        self.web_sessions.pop(session_id, None)
+        response = web.json_response({"ok": True})
+        response.del_cookie("zaay_session", path="/")
+        return response
+
+    async def discord_guilds(self, request):
+        session = self._session(request)
+        if not session:
+            raise web.HTTPUnauthorized(text="Inicia sesión con Discord para continuar.")
+        user_guilds = await self._discord_request("GET", "/users/@me/guilds", token=session["token"])
+        bot_guild_ids = {str(guild.id) for guild in self.bot.guilds}
+        manageable = []
+        for guild in user_guilds:
+            permissions = int(guild.get("permissions", "0"))
+            if guild["id"] not in bot_guild_ids or not permissions & ((1 << 5) | (1 << 3)):
+                continue
+            icon = guild.get("icon")
+            manageable.append({"id": guild["id"], "name": guild["name"], "icon": f"https://cdn.discordapp.com/icons/{guild['id']}/{icon}.png?size=64" if icon else None})
+        return web.json_response({"guilds": manageable}, headers={"Cache-Control": "no-store"})
+
+    async def discord_channels(self, request):
+        session = self._session(request)
+        if not session:
+            raise web.HTTPUnauthorized(text="Inicia sesión con Discord para continuar.")
+        guild_id = request.match_info["guild_id"]
+        user_guilds = await self._discord_request("GET", "/users/@me/guilds", token=session["token"])
+        authorized = any(g["id"] == guild_id and int(g.get("permissions", "0")) & ((1 << 5) | (1 << 3)) for g in user_guilds)
+        guild = self.bot.get_guild(int(guild_id)) if guild_id.isdecimal() else None
+        if not authorized or not guild:
+            raise web.HTTPForbidden(text="No tienes acceso a ese servidor o Zaay no está dentro.")
+        channels = []
+        for channel in guild.text_channels:
+            permissions = channel.permissions_for(guild.me)
+            if permissions.send_messages and permissions.embed_links:
+                channels.append({"id": str(channel.id), "name": channel.name, "category": channel.category.name if channel.category else ""})
+        return web.json_response({"channels": channels}, headers={"Cache-Control": "no-store"})
+
+    async def send_embed(self, request):
+        session = self._session(request)
+        if not session:
+            raise web.HTTPUnauthorized(text="Inicia sesión con Discord para continuar.")
+        origin = request.headers.get("Origin", "")
+        if origin != "https://zayy-bot-production.up.railway.app" or request.headers.get("X-CSRF-Token") != session["csrf"]:
+            raise web.HTTPForbidden(text="Solicitud no válida.")
+        try:
+            payload = await request.json()
+            guild_id = int(payload["guild_id"])
+            channel_id = int(payload["channel_id"])
+            embed_data = payload["embed"]
+            content = payload.get("content", "")
+        except (ValueError, KeyError, TypeError):
+            raise web.HTTPBadRequest(text="Falta seleccionar servidor, canal o contenido.")
+        if not isinstance(content, str) or len(content) > 2000:
+            raise web.HTTPBadRequest(text="El texto fuera del embed debe tener 2,000 caracteres o menos.")
+        user_guilds = await self._discord_request("GET", "/users/@me/guilds", token=session["token"])
+        authorized = any(g["id"] == str(guild_id) and int(g.get("permissions", "0")) & ((1 << 5) | (1 << 3)) for g in user_guilds)
+        guild = self.bot.get_guild(guild_id)
+        channel = guild.get_channel(channel_id) if guild else None
+        if not authorized or not isinstance(channel, discord.TextChannel):
+            raise web.HTTPForbidden(text="No tienes permiso para publicar en ese servidor.")
+        permissions = channel.permissions_for(guild.me)
+        if not permissions.send_messages or not permissions.embed_links:
+            raise web.HTTPForbidden(text="Zaay necesita permiso para enviar mensajes y embeds en ese canal.")
+        if not isinstance(embed_data, dict) or set(embed_data) - {"title", "description", "url", "color", "timestamp", "author", "thumbnail", "image", "footer", "fields"}:
+            raise web.HTTPBadRequest(text="El formato del embed no es válido.")
+        try:
+            embed = discord.Embed.from_dict(embed_data)
+            if not embed.title and not embed.description and not embed.fields and not embed.author.name and not embed.image.url and not embed.thumbnail.url:
+                raise ValueError("empty embed")
+            await channel.send(content=content or None, embed=embed, allowed_mentions=discord.AllowedMentions.none())
+        except (discord.HTTPException, ValueError, TypeError):
+            raise web.HTTPBadRequest(text="Discord rechazó el embed. Revisa los campos y sus límites.")
+        return web.json_response({"ok": True})
 
     async def handle_github(self, request):
         body = await request.read()
