@@ -58,6 +58,19 @@ MAX_COMMITS_SHOWN = 6
 MAX_FILES_SHOWN = 15
 COLOR = 0x2B2D31
 
+_COMMIT_KIND_RE = re.compile(
+    r"^\s*(feat(?:ure)?|fix|bugfix|perf(?:ormance)?|refactor|docs?|chore|security|style|test)(?:\([^)]*\))?!?:\s*",
+    re.IGNORECASE,
+)
+_COMMIT_KIND_LABELS = {
+    "feat": "✨ Función nueva", "feature": "✨ Función nueva",
+    "fix": "🛠️ Corrección", "bugfix": "🛠️ Corrección",
+    "perf": "⚡ Rendimiento", "performance": "⚡ Rendimiento",
+    "refactor": "🧹 Mejora interna", "doc": "📚 Documentación", "docs": "📚 Documentación",
+    "chore": "🔧 Mantenimiento", "security": "🔒 Seguridad",
+    "style": "🎨 Ajuste visual", "test": "🧪 Pruebas",
+}
+
 # Etiquetas legibles para que el anuncio se entienda sin saber de archivos.
 FILE_LABELS = {
     "main.py": "Núcleo del bot",
@@ -161,31 +174,42 @@ def _file_block(title: str, paths: list) -> str:
     return f"**{title}**\n" + "\n".join(lines)
 
 
+def _change_line(note: dict) -> str:
+    """Presenta el tipo y la explicación del commit sin inventar detalles."""
+    title = note["title"]
+    match = _COMMIT_KIND_RE.match(title)
+    kind = _COMMIT_KIND_LABELS.get(match.group(1).lower()) if match else None
+    if match:
+        title = title[match.end():].strip()
+    heading = f"**{kind}: {title}**" if kind else f"**{title}**"
+    body = note.get("body", "").replace("\n", " ").strip()
+    if len(body) > 220:
+        body = body[:219].rstrip() + "…"
+    return f"• {heading}" + (f"\n  {body}" if body else "")
+
+
 def build_announcement(summary: dict) -> discord.Embed:
-    blocks = ["**🔧 Actualización del bot**"]
+    blocks = []
 
     if summary["notes"]:
-        lines = []
-        for note in summary["notes"][:MAX_COMMITS_SHOWN]:
-            lines.append(f"> • **{note['title']}**" + (f" — {note['author']}" if note["author"] else ""))
-            if note["body"]:
-                body = note["body"].replace("\n", " ")
-                lines.append(f"> {body[:220]}{'…' if len(body) > 220 else ''}")
+        lines = [_change_line(note) for note in summary["notes"][:MAX_COMMITS_SHOWN]]
         if len(summary["notes"]) > MAX_COMMITS_SHOWN:
-            lines.append(f"> …y {len(summary['notes']) - MAX_COMMITS_SHOWN} cambios más")
-        blocks.append("\n".join(lines))
+            lines.append(f"• Y {len(summary['notes']) - MAX_COMMITS_SHOWN} cambios más")
+        blocks.append("**Qué se hizo**\n" + "\n".join(lines))
 
-    for title, key in (("➕ Nuevo", "added"), ("✏️ Modificado", "modified"), ("🗑️ Eliminado", "removed")):
-        block = _file_block(title, summary[key])
-        if block:
-            blocks.append(block)
+    file_blocks = [
+        block for title, key in (("➕ Nuevo", "added"), ("✏️ Modificado", "modified"), ("🗑️ Eliminado", "removed"))
+        if (block := _file_block(title, summary[key]))
+    ]
+    if file_blocks:
+        blocks.append("**Archivos implicados**\n" + "\n".join(file_blocks))
 
-    if len(blocks) == 1:
-        blocks.append("> Se actualizaron archivos del bot.")
+    if not blocks:
+        blocks.append("Se publicaron cambios en el bot.")
     if summary["compare"]:
         blocks.append(f"[Ver los cambios en GitHub]({summary['compare']})")
 
-    embed = discord.Embed(description="\n\n".join(blocks)[:4000], color=COLOR)
+    embed = discord.Embed(title="🔧 Actualización del bot", description="\n\n".join(blocks)[:4000], color=COLOR)
     footer = " · ".join(x for x in (summary["repo"], summary["branch"]) if x)
     if footer:
         footer += f" · {summary['commit_count']} commit(s)" if summary["commit_count"] else ""
