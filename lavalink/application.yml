@@ -22,22 +22,21 @@ lavalink:
     youtubePlaylistLoadLimit: 100
     soundcloudPlaylistLoadLimit: 100
     gc-warnings: true
-  plugins:
-    - dependency: "dev.lavalink.youtube:youtube-plugin:1.18.2"
-      repository: "https://maven.lavalink.dev/releases"
-      snapshot: false
-
 plugins:
   youtube:
     enabled: true
     allowSearch: true
     clients:
+      - MWEB
+      - TV
+      - WEB
       - MUSIC
       - ANDROID_MUSIC
       - WEBEMBEDDED
       - ANDROID_VR
-      - WEB
-      - TV
+      - TVHTML5_SIMPLY
+    remotePot:
+      url: "${YOUTUBE_REMOTE_POT_URL:https://pot.ashtongg.me}"
     oauth:
       enabled: true
       refreshToken: "${YOUTUBE_REFRESH_TOKEN}"
