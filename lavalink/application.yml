@@ -23,26 +23,38 @@ lavalink:
     soundcloudPlaylistLoadLimit: 100
     gc-warnings: true
   plugins:
-    - dependency: "dev.lavalink.youtube:youtube-plugin:1.18.2"
+    - dependency: "com.github.topi314.lavasrc:lavasrc-plugin:4.8.3"
+      repository: "https://maven.lavalink.dev/releases"
       snapshot: false
 
 plugins:
-  youtube:
-    enabled: true
-    allowSearch: true
-    allowDirectVideoIds: true
-    allowDirectPlaylistIds: true
-    oauth:
-      enabled: true
-      refreshToken: "${YOUTUBE_REFRESH_TOKEN}"
-    clients:
-      - MUSIC
-      - ANDROID_MUSIC
-      - ANDROID_VR
-      - MWEB
-      - WEB
-      - WEBEMBEDDED
-      - TV
+  lavasrc:
+    sources:
+      youtube: false
+      ytdlp: true
+    ytdlp:
+      path: "yt-dlp"
+      searchLimit: 8
+      customLoadArgs:
+        - "--remote-components"
+        - "ejs:github"
+        - "--cookies"
+        - "/tmp/youtube-cookies.txt"
+        - "-q"
+        - "--no-warnings"
+        - "--flat-playlist"
+        - "--skip-download"
+        - "-J"
+      customPlaybackArgs:
+        - "--remote-components"
+        - "ejs:github"
+        - "--cookies"
+        - "/tmp/youtube-cookies.txt"
+        - "-q"
+        - "--no-warnings"
+        - "-f"
+        - "bestaudio"
+        - "-J"
   soundy:
     enabled: true
 
@@ -50,7 +62,6 @@ logging:
   level:
     root: INFO
     lavalink: INFO
-    dev.lavalink.youtube.http.YoutubeOauth2Handler: INFO
   request:
     enabled: false
     includeClientInfo: true
