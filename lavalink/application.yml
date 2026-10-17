@@ -32,6 +32,8 @@ plugins:
     allowSearch: true
     allowDirectVideoIds: true
     allowDirectPlaylistIds: true
+    oauth:
+      enabled: true
     clients:
       - MUSIC
       - ANDROID_MUSIC
@@ -46,6 +48,7 @@ logging:
   level:
     root: INFO
     lavalink: INFO
+    dev.lavalink.youtube.http.YoutubeOauth2Handler: INFO
   request:
     enabled: false
     includeClientInfo: true
