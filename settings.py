@@ -820,13 +820,15 @@ class Settings(commands.Cog):
             "invisible": discord.Status.invisible,
         }
         if activity_type in status_map:
-            await self.bot.change_presence(status=status_map[activity_type])
+            self.bot._status_override = (status_map[activity_type], self.bot.activity)
+            await self.bot.change_presence(status=status_map[activity_type], activity=self.bot.activity)
             return await ctx.send(embed=discord.Embed(
                 description=f"Status cambiado a `{activity_type}`.",
                 color=0x57f287,
             ))
 
         if activity_type == "clear":
+            self.bot._status_override = None
             await self.bot.change_presence(activity=None)
             return await ctx.send(embed=discord.Embed(
                 description="Actividad removida.",
@@ -858,6 +860,7 @@ class Settings(commands.Cog):
             type=activity_type_map[activity_type],
             name=text,
         )
+        self.bot._status_override = (self.bot.status, activity)
         await self.bot.change_presence(activity=activity)
         await ctx.send(embed=discord.Embed(
             description=f"Actividad: `{activity_type} {text}`",
