@@ -1,0 +1,46 @@
+server:
+  address: 0.0.0.0
+  port: 2333
+  password: ${LAVALINK_PASSWORD}
+
+lavalink:
+  server:
+    sources:
+      youtube: false
+      soundcloud: true
+      bandcamp: true
+      twitch: false
+      vimeo: false
+      nico: false
+      http: true
+      local: false
+    bufferDurationMs: 400
+    frameBufferDurationMs: 5000
+    opusEncodingQuality: 10
+    resamplingQuality: LOW
+    playerUpdateInterval: 5
+    youtubePlaylistLoadLimit: 100
+    soundcloudPlaylistLoadLimit: 100
+    gc-warnings: true
+  plugins:
+    - dependency: "dev.lavalink.youtube:youtube-plugin:1.18.2"
+      snapshot: false
+
+plugins:
+  youtube:
+    enabled: true
+    allowSearch: true
+    allowDirectVideoIds: true
+    allowDirectPlaylistIds: true
+
+logging:
+  level:
+    root: INFO
+    lavalink: INFO
+  request:
+    enabled: false
+    includeClientInfo: true
+    includeHeaders: false
+    includeQueryString: true
+    includePayload: true
+    maxPayloadLength: 10000

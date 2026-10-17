@@ -113,6 +113,22 @@ class AntiNukeBot(commands.Bot):
             "vanity_sniper",
             "github_updates",
         ]
+        lavalink_uri = os.getenv("LAVALINK_URI")
+        lavalink_password = os.getenv("LAVALINK_PASSWORD")
+        if lavalink_uri and lavalink_password:
+            try:
+                import wavelink
+
+                await wavelink.Pool.connect(
+                    nodes=[wavelink.Node(uri=lavalink_uri, password=lavalink_password)],
+                    client=self,
+                )
+                cogs.append("music")
+            except Exception:
+                log.exception("No se pudo conectar a Lavalink; los comandos de música no se cargarán")
+        else:
+            log.info("Lavalink no está configurado; los comandos de música no se cargarán")
+
         for cog in cogs:
             try:
                 await self.load_extension(cog)

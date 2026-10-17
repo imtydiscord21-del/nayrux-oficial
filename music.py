@@ -8,11 +8,7 @@ bloqueos de YouTube (SABR, verificación anti-bot, etc.) — es el enfoque que
 usan los bots de música serios y actualizados en 2026, en vez de pelear esa
 guerra nosotros mismos dentro del bot.
 
-Requiere:
-  - El servicio de Lavalink corriendo (ver /lavalink/application.yml y
-    /lavalink/Dockerfile — se despliega como un servicio APARTE en Railway).
-  - Variables de entorno: LAVALINK_HOST, LAVALINK_PORT, LAVALINK_PASSWORD.
-  - PyNaCl (para la conexión de voz del bot).
+Requiere un nodo Lavalink y las variables LAVALINK_URI y LAVALINK_PASSWORD.
 
 Comandos:
   ,play <nombre o link>   — busca/agrega una canción a la cola y la reproduce
@@ -77,6 +73,9 @@ class Music(commands.Cog):
         self.bot = bot
 
     async def _ensure_voice(self, ctx: commands.Context) -> wavelink.Player | None:
+        if ctx.guild is None:
+            await ctx.send(embed=_error_embed("La música solo está disponible dentro de servidores."))
+            return None
         if ctx.author.voice is None or ctx.author.voice.channel is None:
             await ctx.send(embed=_error_embed("Debes estar en un canal de voz para usar esto."))
             return None
@@ -87,14 +86,32 @@ class Music(commands.Cog):
         if player is None:
             try:
                 player = await channel.connect(cls=wavelink.Player)
-            except Exception as e:
-                await ctx.send(embed=_error_embed(f"No pude conectarme al canal de voz: {e}"))
+            except Exception:
+                log.warning("Falló la conexión de voz en el servidor %s", ctx.guild.id, exc_info=True)
+                await ctx.send(embed=_error_embed("No pude conectarme al canal de voz. Inténtalo otra vez."))
                 return None
-            player.autoplay = wavelink.AutoPlayMode.partial
+            player.autoplay = wavelink.AutoPlayMode.disabled
             player.inactive_timeout = IDLE_DISCONNECT_MS // 1000
         elif player.channel.id != channel.id:
-            await player.move_to(channel)
+            await ctx.send(embed=_error_embed("Ya estoy reproduciendo en otro canal de voz."))
+            return None
 
+        return player
+
+    async def _player_for_ctx(self, ctx: commands.Context) -> wavelink.Player | None:
+        if ctx.guild is None:
+            await ctx.send(embed=_error_embed("La música solo está disponible dentro de servidores."))
+            return None
+        player: wavelink.Player = ctx.guild.voice_client
+        if player is None:
+            await ctx.send(embed=_error_embed("No estoy conectado a un canal de voz."))
+            return None
+        if ctx.author.voice is None or ctx.author.voice.channel is None:
+            await ctx.send(embed=_error_embed("Debes estar en mi canal de voz para controlar la música."))
+            return None
+        if player.channel.id != ctx.author.voice.channel.id:
+            await ctx.send(embed=_error_embed("Debes estar en mi canal de voz para controlar la música."))
+            return None
         return player
 
     @commands.command(name="play", aliases=["p"])
@@ -105,38 +122,54 @@ class Music(commands.Cog):
 
         msg = await ctx.send(embed=discord.Embed(description="Buscando...", color=0x2b2d31))
 
+        search_query = query if query.startswith(("http://", "https://")) else f"ytsearch:{query}"
         try:
-            results = await wavelink.Playable.search(query)
-        except Exception as e:
-            return await msg.edit(embed=_error_embed(f"No pude encontrar esa canción: {e}"))
+            results = await wavelink.Playable.search(search_query)
+        except Exception:
+            log.warning("Falló la búsqueda de música", exc_info=True)
+            return await msg.edit(embed=_error_embed("No pude buscar esa canción. Inténtalo de nuevo."))
 
         if not results:
             return await msg.edit(embed=_error_embed("No encontré ninguna canción con eso."))
 
-        track = results[0] if not isinstance(results, wavelink.Playlist) else results.tracks[0]
-        track.extras = {"requester_id": ctx.author.id}
+        tracks = list(results.tracks) if isinstance(results, wavelink.Playlist) else [results[0]]
+        tracks = tracks[:100]
+        if not tracks:
+            return await msg.edit(embed=_error_embed("La lista no contiene canciones disponibles."))
+        for track in tracks:
+            track.extras = {"requester_id": ctx.author.id}
 
         if not player.playing and not player.paused and player.queue.is_empty:
+            track = tracks.pop(0)
             await player.play(track)
-            await msg.edit(embed=_track_embed("Reproduciendo ahora", track, ctx.author))
+            if tracks:
+                await player.queue.put_wait(tracks)
+                await msg.edit(embed=_track_embed(f"Reproduciendo · {len(tracks) + 1} canciones añadidas", track, ctx.author))
+            else:
+                await msg.edit(embed=_track_embed("Reproduciendo ahora", track, ctx.author))
         else:
-            await player.queue.put_wait(track)
-            position = player.queue.count
-            await msg.edit(embed=_track_embed(f"Agregado a la cola (posición {position})", track, ctx.author))
+            position = player.queue.count + 1
+            await player.queue.put_wait(tracks)
+            if len(tracks) == 1:
+                await msg.edit(embed=_track_embed(f"Agregado a la cola (posición {position})", tracks[0], ctx.author))
+            else:
+                await msg.edit(embed=_success_embed(f"Añadidas **{len(tracks)} canciones** a la cola desde la posición `{position}`."))
 
     @commands.command(name="skip")
     async def skip(self, ctx: commands.Context):
-        player: wavelink.Player = ctx.guild.voice_client
-        if not player or not player.playing:
+        player = await self._player_for_ctx(ctx)
+        if not player:
+            return
+        if not player.playing:
             return await ctx.send(embed=_error_embed("No hay nada sonando ahora mismo."))
         await player.skip(force=True)
         await ctx.send(embed=_success_embed("Canción saltada."))
 
     @commands.command(name="stop")
     async def stop(self, ctx: commands.Context):
-        player: wavelink.Player = ctx.guild.voice_client
+        player = await self._player_for_ctx(ctx)
         if not player:
-            return await ctx.send(embed=_error_embed("No estoy reproduciendo nada."))
+            return
         player.queue.clear()
         await player.stop()
         await player.disconnect()
@@ -144,33 +177,39 @@ class Music(commands.Cog):
 
     @commands.command(name="pause")
     async def pause(self, ctx: commands.Context):
-        player: wavelink.Player = ctx.guild.voice_client
-        if not player or not player.playing:
+        player = await self._player_for_ctx(ctx)
+        if not player:
+            return
+        if not player.playing:
             return await ctx.send(embed=_error_embed("No hay nada sonando ahora mismo."))
         await player.pause(True)
         await ctx.send(embed=_success_embed("Pausado."))
 
     @commands.command(name="resume")
     async def resume(self, ctx: commands.Context):
-        player: wavelink.Player = ctx.guild.voice_client
-        if not player or not player.paused:
+        player = await self._player_for_ctx(ctx)
+        if not player:
+            return
+        if not player.paused:
             return await ctx.send(embed=_error_embed("No hay nada pausado ahora mismo."))
         await player.pause(False)
         await ctx.send(embed=_success_embed("Reanudado."))
 
     @commands.command(name="leave", aliases=["disconnect"])
     async def leave(self, ctx: commands.Context):
-        player: wavelink.Player = ctx.guild.voice_client
+        player = await self._player_for_ctx(ctx)
         if not player:
-            return await ctx.send(embed=_error_embed("No estoy en un canal de voz."))
+            return
         player.queue.clear()
         await player.disconnect()
         await ctx.send(embed=_success_embed("Desconectado del canal de voz."))
 
     @commands.command(name="queue", aliases=["q"])
     async def queue_cmd(self, ctx: commands.Context):
-        player: wavelink.Player = ctx.guild.voice_client
-        if not player or (not player.current and player.queue.is_empty):
+        player = await self._player_for_ctx(ctx)
+        if not player:
+            return
+        if not player.current and player.queue.is_empty:
             return await ctx.send(embed=discord.Embed(description="La cola está vacía.", color=0x2b2d31))
 
         lines = []
@@ -186,25 +225,28 @@ class Music(commands.Cog):
 
     @commands.command(name="nowplaying", aliases=["np"])
     async def nowplaying(self, ctx: commands.Context):
-        player: wavelink.Player = ctx.guild.voice_client
-        if not player or not player.current:
+        player = await self._player_for_ctx(ctx)
+        if not player:
+            return
+        if not player.current:
             return await ctx.send(embed=discord.Embed(description="No hay nada reproduciéndose.", color=0x2b2d31))
         await ctx.send(embed=_track_embed("Reproduciendo ahora", player.current))
 
     @commands.command(name="volume", aliases=["vol"])
     async def volume(self, ctx: commands.Context, level: int):
-        player: wavelink.Player = ctx.guild.voice_client
+        player = await self._player_for_ctx(ctx)
         if not player:
-            return await ctx.send(embed=_error_embed("No estoy en un canal de voz."))
-        level = max(0, min(level, 200))
+            return
+        if not 0 <= level <= 200:
+            return await ctx.send(embed=_error_embed("El volumen debe estar entre `0` y `200`."))
         await player.set_volume(level)
         await ctx.send(embed=_success_embed(f"Volumen ajustado a `{level}%`."))
 
     @commands.command(name="loop")
     async def loop_cmd(self, ctx: commands.Context, mode: str = None):
-        player: wavelink.Player = ctx.guild.voice_client
+        player = await self._player_for_ctx(ctx)
         if not player:
-            return await ctx.send(embed=_error_embed("No estoy reproduciendo nada."))
+            return
         mode = (mode or "").lower()
         mapping = {
             "track": wavelink.QueueMode.loop,
@@ -219,8 +261,10 @@ class Music(commands.Cog):
 
     @commands.command(name="shuffle")
     async def shuffle(self, ctx: commands.Context):
-        player: wavelink.Player = ctx.guild.voice_client
-        if not player or player.queue.is_empty:
+        player = await self._player_for_ctx(ctx)
+        if not player:
+            return
+        if player.queue.is_empty:
             return await ctx.send(embed=_error_embed("No hay suficientes canciones en la cola para mezclar."))
         player.queue.shuffle()
         await ctx.send(embed=_success_embed("Cola mezclada."))
@@ -228,10 +272,26 @@ class Music(commands.Cog):
     @commands.Cog.listener()
     async def on_wavelink_track_end(self, payload: wavelink.TrackEndEventPayload):
         player = payload.player
-        if player is None or player.queue.is_empty:
+        if player is None or payload.reason == "replaced" or player.queue.is_empty:
             return
         next_track = await player.queue.get_wait()
         await player.play(next_track)
+
+    @commands.Cog.listener()
+    async def on_wavelink_inactive_player(self, player: wavelink.Player):
+        if player.queue.is_empty and not player.playing:
+            await player.disconnect()
+
+    @commands.Cog.listener()
+    async def on_wavelink_track_exception(self, payload: wavelink.TrackExceptionEventPayload):
+        log.warning("Lavalink no pudo reproducir una pista: %s", payload.exception)
+
+    @commands.Cog.listener()
+    async def on_wavelink_track_stuck(self, payload: wavelink.TrackStuckEventPayload):
+        log.warning("Pista bloqueada en Lavalink (%s ms)", payload.threshold)
+        player = payload.player
+        if player is not None:
+            await player.stop()
 
     @commands.Cog.listener()
     async def on_wavelink_node_ready(self, payload: wavelink.NodeReadyEventPayload):

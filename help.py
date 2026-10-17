@@ -499,6 +499,23 @@ _NEW_CATEGORIES = {
             ], None),
         ],
     },
+    "music": {
+        "label": "Música",
+        "description": "Busca y reproduce música en canales de voz.",
+        "sections": [
+            ("Reproductor", [
+                ",play <búsqueda o enlace>",
+                ",queue",
+                ",nowplaying",
+                ",skip",
+                ",pause / ,resume",
+                ",stop / ,leave",
+                ",volume <0-200>",
+                ",loop <track|queue|off>",
+                ",shuffle",
+            ], "Entra a un canal de voz antes de reproducir. Requiere el servicio de audio Lavalink."),
+        ],
+    },
 }
 
 # Orden del menú: Boost junto a Bienvenidas, AFK tras Information, IA tras Autoresponders
@@ -511,6 +528,8 @@ for _key, _val in CATEGORIES.items():
         _ordered["ia"] = _NEW_CATEGORIES["ia"]
     elif _key == "information":
         _ordered["afk"] = _NEW_CATEGORIES["afk"]
+    elif _key == "integrations":
+        _ordered["music"] = _NEW_CATEGORIES["music"]
 CATEGORIES.clear()
 CATEGORIES.update(_ordered)
 del _ordered
@@ -527,6 +546,7 @@ def _visible_categories() -> dict:
 
 ALIASES = {
     "utilities": "information", "utils": "information", "utilidades": "information", "info": "information",
+    "musica": "music", "música": "music",
     "roblox": "integrations", "rblx": "integrations", "integrations": "integrations", "integraciones": "integrations",
     "autorole": "automation", "autoreact": "automation", "autogreet": "automation",
     "automation": "automation", "automatizacion": "automation", "automatización": "automation",
