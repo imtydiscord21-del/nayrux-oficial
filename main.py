@@ -154,15 +154,15 @@ class AntiNukeBot(commands.Bot):
             await self.change_presence(status=status, activity=activity)
             return
         statuses = [
-            (discord.ActivityType.watching, "zayybot-production.up.railway.app"),
+            (discord.ActivityType.watching, "la seguridad de tu servidor"),
             (discord.ActivityType.watching, f"{len(self.guilds)} servidores"),
             (discord.ActivityType.playing, "Mencióname para ver mis comandos"),
-            (discord.ActivityType.competing, "protección para tu comunidad"),
+            (discord.ActivityType.competing, "protección de comunidades"),
         ]
         activity_type, name = statuses[self._status_index % len(statuses)]
         self._status_index += 1
         await self.change_presence(
-            status=discord.Status.dnd,
+            status=discord.Status.online,
             activity=discord.Activity(type=activity_type, name=name),
         )
 
