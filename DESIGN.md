@@ -17,7 +17,7 @@ La portada se compone como una hoja editorial de turno: identidad y estado reale
 
 - La acción principal de la portada es invitar Zaay.
 - El constructor mantiene la vista previa sincronizada, la identidad real del bot y el JSON revisable/copible.
-- En móvil, Editar y Vista previa son controles accesibles con estado `aria-pressed`; el panel Editar aparece inicialmente.
+- En móvil, Editar y Vista previa son controles accesibles con estado `aria-pressed`; el panel Editar aparece inicialmente. La portada pasa a una sola columna en tabletas estrechas y las estadísticas se ordenan en filas completas en teléfono.
 - Movimiento breve para navegación y aparición de vistas previas; `prefers-reduced-motion` elimina transiciones y animación no esencial.
 - Foco visible de 3px, estados de validación y carga, y etiquetas de límites visibles.
 

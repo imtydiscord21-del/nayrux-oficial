@@ -26,7 +26,8 @@
   },
   "responsive": {
     "builderTwoPanelMinWidth": "821px",
-    "builderMobileSwitchMaxWidth": "820px"
+    "builderMobileSwitchMaxWidth": "820px",
+    "homeSingleColumnMaxWidth": "700px"
   },
   "motion": {
     "navigation": "280ms cubic-bezier(.2,.75,.25,1)",
