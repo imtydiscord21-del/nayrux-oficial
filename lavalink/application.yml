@@ -6,7 +6,7 @@ lavalink:
   server:
     sources:
       youtube: false
-      soundcloud: true
+      soundcloud: false
       bandcamp: true
       twitch: false
       vimeo: false
@@ -20,8 +20,6 @@ lavalink:
     playerUpdateInterval: 5
     youtubePlaylistLoadLimit: 100
     soundcloudPlaylistLoadLimit: 100
-    soundcloudSearchEnabled: true
-    soundcloudFilterOutPreviewTracks: false
     gc-warnings: true
   plugins:
     - dependency: "dev.lavalink.youtube:youtube-plugin:1.18.2"
@@ -40,6 +38,8 @@ plugins:
       - MWEB
       - WEB
       - WEBEMBEDDED
+  soundy:
+    enabled: true
 
 logging:
   level:
