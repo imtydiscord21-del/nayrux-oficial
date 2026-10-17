@@ -134,6 +134,26 @@ class Database:
         self.get_guild(guild_id)  # asegura que el documento exista con sus valores por defecto
         _guilds.update_one({"_id": str(guild_id)}, {"$set": {key: value}}, upsert=True)
 
+    def get_boost_count(self, guild_id: int, user_id: int) -> int:
+        doc = _guilds.find_one(
+            {"_id": str(guild_id)},
+            {f"boost_history.{user_id}.count": 1},
+        ) or {}
+        return int((doc.get("boost_history", {}).get(str(user_id), {}) or {}).get("count", 0))
+
+    def record_boost_start(self, guild_id: int, user_id: int, started_at) -> int:
+        """Count a newly observed boost once, even when two cogs handle the event."""
+        self.get_guild(guild_id)
+        user_key = str(user_id)
+        count_path = f"boost_history.{user_key}.count"
+        started_path = f"boost_history.{user_key}.last_started_at"
+        started_value = started_at.isoformat()
+        _guilds.update_one(
+            {"_id": str(guild_id), started_path: {"$ne": started_value}},
+            {"$inc": {count_path: 1}, "$set": {started_path: started_value}},
+        )
+        return self.get_boost_count(guild_id, user_id)
+
     def guilds_with_field(self, key: str) -> list:
         """[(guild_id, valor)] de los servidores que tienen ese campo con contenido.
         Sirve para tareas en segundo plano (p. ej. revisar Instagram) sin recorrer todo."""

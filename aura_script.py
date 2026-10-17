@@ -28,6 +28,10 @@ import re
 from dataclasses import dataclass, field
 
 import discord
+from message_variables import (
+    USER_VARIABLES, GUILD_VARIABLES, CHANNEL_VARIABLES, DATETIME_VARIABLES,
+    BOOST_VARIABLES, variable_values as common_variable_values,
+)
 
 # Marcadores privados para blindar llaves que vienen DENTRO de un valor sustituido
 _OPEN = "\ue000"
@@ -40,25 +44,7 @@ MAX_BUTTONS = 5
 MAX_FIELDS = 25
 
 # Textos de la documentación (usados por ,wlc variables / ,boostmsg variables)
-USER_VARIABLES = [
-    ("{user}", "Mención"),
-    ("{user.name}", "Nombre de usuario"),
-    ("{user.display}", "Nombre para mostrar"),
-    ("{user.id}", "ID"),
-    ("{user.avatar}", "URL del avatar"),
-    ("{user.mention}", "Mención"),
-    ("{user.color}", "Color hex"),
-    ("{user.created_at}", "Fecha de creación"),
-    ("{user.joined_at}", "Fecha de ingreso"),
-]
-GUILD_VARIABLES = [
-    ("{guild.name}", "Nombre del servidor"),
-    ("{guild.id}", "ID del servidor"),
-    ("{guild.icon}", "URL del ícono"),
-    ("{guild.count}", "Cantidad de miembros"),
-    ("{guild.boost_count}", "Cantidad de boosts"),
-]
-GUILD_VARIABLES_BOOST = GUILD_VARIABLES + [("{guild.boost_level}", "Nivel de boost")]
+GUILD_VARIABLES_BOOST = GUILD_VARIABLES
 
 FORMAT_TAGS = [
     ("{content: texto}", "Contenido del mensaje"),
@@ -88,26 +74,22 @@ def _restore(text: str) -> str:
     return text.replace(_OPEN, "{").replace(_CLOSE, "}")
 
 
-def variable_values(member: discord.Member, guild: discord.Guild | None = None) -> dict:
+def variable_values(
+    member: discord.Member,
+    guild: discord.Guild | None = None,
+    channel=None,
+    boost_count=None,
+) -> dict:
     guild = guild or member.guild
-    joined = getattr(member, "joined_at", None)
-    return {
-        "{user}": member.mention,
-        "{user.name}": member.name,
-        "{user.display}": member.display_name,
-        "{user.id}": member.id,
-        "{user.avatar}": member.display_avatar.url,
-        "{user.mention}": member.mention,
-        "{user.color}": str(member.color) if hasattr(member, "color") else "#000000",
-        "{user.created_at}": discord.utils.format_dt(member.created_at, "D"),
-        "{user.joined_at}": discord.utils.format_dt(joined, "D") if joined else "—",
-        "{guild.name}": guild.name,
-        "{guild.id}": guild.id,
-        "{guild.icon}": guild.icon.url if guild.icon else "",
-        "{guild.count}": guild.member_count or 0,
-        "{guild.boost_count}": guild.premium_subscription_count or 0,
-        "{guild.boost_level}": guild.premium_tier,
-    }
+    values = common_variable_values(
+        member=member, guild=guild, channel=channel, boost_count=boost_count
+    )
+    # Keep the original shorthand aliases accepted by saved Aura templates.
+    values["{user}"] = member.mention
+    values["{user.display}"] = member.display_name
+    values["{guild.boost_count}"] = guild.premium_subscription_count or 0
+    values["{guild.boost_level}"] = guild.premium_tier
+    return values
 
 
 def substitute(text: str, values: dict) -> str:
@@ -288,9 +270,15 @@ def parse(text: str) -> Script:
     return script
 
 
-def render_text(text: str, member: discord.Member, guild: discord.Guild | None = None) -> str:
+def render_text(
+    text: str,
+    member: discord.Member,
+    guild: discord.Guild | None = None,
+    channel=None,
+    boost_count=None,
+) -> str:
     """Reemplaza las variables y deja el texto listo para parse()."""
-    return substitute(text, variable_values(member, guild))
+    return substitute(text, variable_values(member, guild, channel, boost_count))
 
 
 # ── Construcción del mensaje de Discord ──────────────────────────────────────
@@ -339,12 +327,20 @@ def build_view(script: Script) -> discord.ui.View | None:
     return view
 
 
-def build_message(text: str, member: discord.Member, guild: discord.Guild | None = None, loader=None):
+def build_message(
+    text: str,
+    member: discord.Member,
+    guild: discord.Guild | None = None,
+    loader=None,
+    *,
+    channel=None,
+    boost_count=None,
+):
     """
     Texto con etiquetas -> (content, embed, view, errores).
     loader(nombre) debe devolver el texto de un embed guardado (para {embed:nombre}) o None.
     """
-    script = parse(render_text(text, member, guild))
+    script = parse(render_text(text, member, guild, channel, boost_count))
     errors = list(script.errors)
 
     if script.custom_embed:
@@ -352,7 +348,7 @@ def build_message(text: str, member: discord.Member, guild: discord.Guild | None
         if saved is None:
             errors.append(f"No existe un embed guardado llamado `{script.custom_embed}`. Créalo con `,embed create`.")
         else:
-            inner = parse(render_text(saved, member, guild))
+            inner = parse(render_text(saved, member, guild, channel, boost_count))
             errors.extend(inner.errors)
             # El embed guardado aporta su aspecto; lo escrito en el mensaje tiene prioridad
             for attr in ("title", "description", "color", "thumbnail", "image", "footer_text", "footer_icon",
@@ -386,4 +382,4 @@ def validate(text: str):
 
 
 def variable_values_keys():
-    return [k for k, _ in USER_VARIABLES + GUILD_VARIABLES_BOOST]
+    return [k for k, _ in USER_VARIABLES + GUILD_VARIABLES_BOOST + CHANNEL_VARIABLES + DATETIME_VARIABLES + BOOST_VARIABLES]

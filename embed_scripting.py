@@ -26,6 +26,8 @@ o fields.
 
 import discord
 from datetime import datetime, timezone
+import re
+from message_variables import variable_values
 
 
 def extract_vblocks(text: str) -> list[str]:
@@ -118,50 +120,24 @@ def parse_code(text: str) -> dict:
     return result
 
 
-def resolve_vars(text: str, *, member=None, guild=None, channel=None) -> str:
-    """Reemplaza variables {user.*}, {guild.*}, {channel.*} según el contexto disponible."""
+def resolve_vars(text: str, *, member=None, guild=None, channel=None, boost_count=None) -> str:
+    """Replace message variables without recursively expanding user-provided values."""
     if not text:
         return text
-    if member is not None and guild is None:
-        guild = member.guild
-
-    if member is not None:
-        text = (
-            text
-            .replace("{user.mention}", member.mention)
-            .replace("{user.tag}", str(member))
-            .replace("{user.name}", member.display_name)
-            .replace("{user.id}", str(member.id))
-            .replace("{user.avatar}", member.display_avatar.url)
-            .replace("{user.created}", f"<t:{int(member.created_at.timestamp())}:R>")
-            .replace("{user}", str(member))
-        )
+    values = variable_values(member=member, guild=guild, channel=channel, boost_count=boost_count)
+    # Keep old spellings that existing saved templates already use.
     if guild is not None:
-        text = (
-            text
-            .replace("{guild.name}", guild.name)
-            .replace("{guild.count}", str(guild.member_count))
-            .replace("{guild.id}", str(guild.id))
-            .replace("{guild.icon}", guild.icon.url if guild.icon else "")
-            .replace("{guild.boostcount}", str(guild.premium_subscription_count or 0))
-            .replace("{guild.vanity}", guild.vanity_url_code or "")
-        )
-    if channel is not None:
-        text = (
-            text
-            .replace("{channel.mention}", channel.mention)
-            .replace("{channel.name}", channel.name)
-        )
-    return text
+        values["{guild.boostcount}"] = getattr(guild, "premium_subscription_count", None) or 0
+    return re.sub(r"\{[^{}]+\}", lambda match: str(values.get(match.group(0), match.group(0))), text)
 
 
-def build_message(parsed: dict, *, member=None, guild=None, channel=None):
+def build_message(parsed: dict, *, member=None, guild=None, channel=None, boost_count=None):
     """
     Construye (embed, content, view) a partir de un dict ya parseado con parse_code().
     embed y view pueden ser None si no se definieron esos campos.
     """
     def r(text):
-        return resolve_vars(text, member=member, guild=guild, channel=channel)
+        return resolve_vars(text, member=member, guild=guild, channel=channel, boost_count=boost_count)
 
     content = r(parsed.get("message")) if parsed.get("message") else None
 

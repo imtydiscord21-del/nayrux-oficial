@@ -78,7 +78,8 @@ class Wlc(commands.Cog):
         if not cfg:
             return await error(ctx, "No hay un mensaje de bienvenida configurado. Usa `,wlc config`.")
         content, embed, view, problems = build_message(
-            cfg["message"], ctx.author, ctx.guild, loader=lambda n: get_saved(ctx.guild.id, n)
+            cfg["message"], ctx.author, ctx.guild,
+            loader=lambda n: get_saved(ctx.guild.id, n), channel=ctx.channel,
         )
         if problems:
             return await error(ctx, "El mensaje tiene problemas:\n" + "\n".join(f"• {p}" for p in problems))
@@ -121,6 +122,7 @@ class Wlc(commands.Cog):
             content, embed, view, problems = await asyncio.to_thread(
                 build_message, cfg["message"], member, member.guild,
                 lambda n: get_saved(member.guild.id, n),
+                channel=channel,
             )
             if problems:
                 log.warning(f"[{member.guild.name}] Problemas en el mensaje de bienvenida: {problems}")

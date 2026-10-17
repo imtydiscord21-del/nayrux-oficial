@@ -4,7 +4,9 @@ Mismo diseño que las capturas (autor, título, descripción en cita, secciones,
 """
 
 from aura_script import (
-    USER_VARIABLES, GUILD_VARIABLES, GUILD_VARIABLES_BOOST, FORMAT_TAGS, BUTTON_TAGS,
+    USER_VARIABLES, GUILD_VARIABLES, GUILD_VARIABLES_BOOST,
+    CHANNEL_VARIABLES, DATETIME_VARIABLES, BOOST_VARIABLES,
+    FORMAT_TAGS, BUTTON_TAGS,
 )
 from aura_ui import info_embed, variable_lines
 
@@ -32,9 +34,12 @@ def variables_embed(ctx, kind: str):
     sections = [
         ("variables de usuario", variable_lines(USER_VARIABLES)),
         ("variables del servidor", variable_lines(guild_vars)),
+        ("variables del canal", variable_lines(CHANNEL_VARIABLES)),
+        ("fecha y hora", variable_lines(DATETIME_VARIABLES)),
         ("embeds personalizados", custom),
     ]
     if kind == "boost":
+        sections.append(("variables de boost", variable_lines(BOOST_VARIABLES)))
         sections.append(("etiquetas de botón", [
             f"`{BUTTON_TAGS[0][0]}` - {BUTTON_TAGS[0][1]}",
             f"`{BUTTON_TAGS[1][0]}`",

@@ -10,6 +10,7 @@ Comandos:
   ,boost off
 """
 
+import asyncio
 import discord
 from discord.ext import commands
 from config import db
@@ -42,11 +43,17 @@ class Boost(commands.Cog):
             return
 
         entries = _get_entries(after.guild.id)
+        boost_count = await asyncio.to_thread(
+            db.record_boost_start, after.guild.id, after.id, after.premium_since
+        )
         for entry in entries:
             channel = after.guild.get_channel(int(entry["channel_id"]))
             if not channel:
                 continue
-            embed, content, view = build_message(entry["parsed"], member=after)
+            embed, content, view = build_message(
+                entry["parsed"], member=after, guild=after.guild,
+                channel=channel, boost_count=boost_count,
+            )
             try:
                 kwargs = {}
                 if content:
@@ -123,7 +130,11 @@ class Boost(commands.Cog):
         entries = _get_entries(ctx.guild.id)
         if not entries:
             return await ctx.send(embed=discord.Embed(description="No hay mensajes de boost configurados. Usa `,boost add` primero.", color=0x2b2d31))
-        embed, content, view = build_message(entries[0]["parsed"], member=ctx.author)
+        boost_count = await asyncio.to_thread(db.get_boost_count, ctx.guild.id, ctx.author.id)
+        embed, content, view = build_message(
+            entries[0]["parsed"], member=ctx.author, guild=ctx.guild,
+            channel=ctx.channel, boost_count=boost_count,
+        )
         kwargs = {}
         if content:
             kwargs["content"] = content

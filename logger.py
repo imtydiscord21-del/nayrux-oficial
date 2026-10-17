@@ -11,6 +11,8 @@ PUNISHMENT_LABELS = {
     "kick": "Expulsado",
     "strip": "Roles Retirados",
     "mute": "Muteado en el Servidor",
+    "delete": "Mensaje eliminado",
+    "lockdown": "Modo raid activado",
 }
 
 # Categorías de log disponibles y el nombre de canal que les corresponde

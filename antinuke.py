@@ -214,15 +214,13 @@ async def _get_executor_with_retry(
 # ── Punishment ────────────────────────────────────────────────────────────────
 
 async def _punish(guild: discord.Guild, member: discord.Member, punishment: str):
-    """Execute the configured punishment. Called via create_task."""
+    """Apply a sanction and return (success, diagnostic)."""
     key = (guild.id, member.id)
     if key in punishing:
-        return
+        return False, "Ya hay una sanción en curso para este usuario."
     punishing.add(key)
+    hold_guard = False
     try:
-        if not guild.me.guild_permissions.administrator:
-            return
-
         if punishment == "ban":
             await guild.ban(member, reason="AntiNuke: automatic protection", delete_message_days=0)
         elif punishment == "kick":
@@ -232,18 +230,55 @@ async def _punish(guild: discord.Guild, member: discord.Member, punishment: str)
                 r for r in member.roles
                 if r != guild.default_role and r.is_assignable()
             ]
-            if roles_to_remove:
-                await member.remove_roles(*roles_to_remove, reason="AntiNuke: roles stripped")
+            if not roles_to_remove:
+                return False, "No hay roles que el bot pueda retirar."
+            await member.remove_roles(*roles_to_remove, reason="AntiNuke: roles stripped")
         elif punishment == "mute":
             until = discord.utils.utcnow() + timedelta(days=28)
             await member.timeout(until, reason="AntiNuke: automatic mute")
-    except discord.Forbidden:
-        log.warning(f"Missing permissions to punish {member} in {guild.name}")
-    except Exception as e:
+        else:
+            return False, f"Sanción desconocida: {punishment}."
+        # Hold the duplicate guard for 30s without delaying the result/log.
+        async def release_guard():
+            await asyncio.sleep(30)
+            punishing.discard(key)
+        asyncio.create_task(release_guard())
+        hold_guard = True
+        return True, None
+    except discord.Forbidden as e:
+        detail = "Discord rechazó la acción: faltan permisos o el usuario está por encima del bot."
+        log.warning(f"Missing permissions to punish {member} in {guild.name}: {e}")
+        return False, detail
+    except discord.HTTPException as e:
         log.error(f"Punishment error for {member} in {guild.name}: {e}")
+        return False, f"Discord devolvió un error HTTP ({getattr(e, 'status', 'desconocido')})."
+    except Exception as e:
+        log.exception(f"Punishment error for {member} in {guild.name}")
+        return False, f"Error inesperado: {type(e).__name__}."
     finally:
-        await asyncio.sleep(30)
-        punishing.discard(key)
+        if not hold_guard:
+            punishing.discard(key)
+
+
+async def _punish_and_log(
+    guild, member, punishment, *, action, target, moderator, reason, module,
+    category="mod", extra_fields=None, channel_override=None,
+):
+    """Log the configured action only after Discord confirms it succeeded."""
+    succeeded, detail = await _punish(guild, member, punishment)
+    fields = list(extra_fields or [])
+    if not succeeded:
+        fields.extend([
+            ("Sanción solicitada", f"`{punishment}`", True),
+            ("Resultado", "No aplicada", True),
+            ("Detalle", detail or "No se pudo confirmar la acción.", False),
+        ])
+    await send_log(
+        guild, action=action, punishment=punishment if succeeded else None,
+        target=target, moderator=moderator, reason=reason, module=module,
+        category=category, extra_fields=fields or None,
+        channel_override=channel_override,
+    )
 
 
 # ── Raid lockdown ─────────────────────────────────────────────────────────────
@@ -262,6 +297,7 @@ async def _enter_raid_mode(guild: discord.Guild, lockdown_minutes: int):
                 )
         except (discord.Forbidden, discord.HTTPException) as e:
             log.warning(f"[{guild.name}] No se pudo subir verification level: {e}")
+            return False
         _raid_mode[guild.id] = (now + timedelta(minutes=lockdown_minutes), original_level)
     else:
         _, original_level = _raid_mode[guild.id]
@@ -288,6 +324,7 @@ async def _enter_raid_mode(guild: discord.Guild, lockdown_minutes: int):
             pass
 
     asyncio.create_task(_revert_later())
+    return True
 
 
 def _in_raid_mode(guild_id: int) -> bool:
@@ -411,22 +448,23 @@ async def _try_instant_admin_revert(
         except discord.HTTPException:
             reverted = False
 
-    kicked = False
-    try:
-        await guild.kick(executor, reason="AntiNuke: acción no autorizada por Administrator sin whitelist")
-        kicked = True
-    except discord.HTTPException:
-        kicked = False
+    kicked, kick_error = await _punish(guild, executor, "kick")
 
     fields = list(extra_fields or [])
     if revert is not None:
         fields.append(("Reversión", "Completada" if reverted else "Falló (revisa permisos del bot)", True))
-    fields.append(("Expulsado", "Sí" if kicked else "No (el bot no tiene permisos suficientes)", True))
+    fields.append(("Expulsado", "Sí" if kicked else "No", True))
+    if not kicked:
+        fields.extend([
+            ("Sanción solicitada", "`kick`", True),
+            ("Resultado", "No aplicada", True),
+            ("Detalle", kick_error or "Discord no confirmó la expulsión.", False),
+        ])
 
     asyncio.create_task(send_log(
         guild,
         action="kick",
-        punishment="kick",
+        punishment="kick" if kicked else None,
         target=executor,
         moderator=guild.me,
         reason=reason,
@@ -491,13 +529,13 @@ async def _handle_event(
         has_backup = False
         restore_guild = None
 
-    # Run punishment, log, auto-unban, and backup restore concurrently
+    # Wait for Discord's sanction result before writing the log.
     tasks = [
-        asyncio.create_task(_punish(guild, executor, punishment)),
-        asyncio.create_task(send_log(
+        asyncio.create_task(_punish_and_log(
             guild,
+            executor,
+            punishment,
             action=punishment,
-            punishment=punishment,
             target=executor,
             moderator=guild.me,
             reason=reason,
@@ -750,17 +788,21 @@ class AntiNuke(commands.Cog):
         # Siempre se borra sin importar whitelist: dejarlo visible es peor que
         # borrar el mensaje de alguien que no debía haberlo pegado.
         if an.get("anti_token", True) and _TOKEN_RE.search(message.content):
+            deleted = False
+            delete_error = None
             try:
                 await message.delete()
-            except (discord.Forbidden, discord.HTTPException):
-                pass
+                deleted = True
+            except (discord.Forbidden, discord.HTTPException) as e:
+                delete_error = "El bot no pudo borrar el mensaje (revisa Manage Messages)."
             try:
                 await message.author.send(embed=discord.Embed(
                     description=(
-                        "Borré un mensaje tuyo en el servidor porque contenía algo con "
+                        ("Borré" if deleted else "Detecté") + " un mensaje tuyo en el servidor porque contenía algo con "
                         "el formato de un **token de bot de Discord**. Si es un token "
                         "real, regeneralo cuanto antes en el Developer Portal — "
                         "cualquiera que lo tenga puede controlar ese bot."
+                        + ("" if deleted else "\n\nNo pude borrarlo; avisa a un moderador para que lo elimine.")
                     ),
                     color=0xed4245,
                 ))
@@ -769,12 +811,17 @@ class AntiNuke(commands.Cog):
             asyncio.create_task(send_log(
                 guild,
                 action="delete",
-                punishment="delete",
+                punishment="delete" if deleted else None,
                 target=message.author,
                 moderator=guild.me,
                 reason="Mensaje con formato de token de bot filtrado",
                 module="Anti-Token",
                 category="messages",
+                extra_fields=[] if deleted else [
+                    ("Acción solicitada", "Borrar mensaje", True),
+                    ("Resultado", "No aplicada", True),
+                    ("Detalle", delete_error, False),
+                ],
                 channel_override=_resolve_module_log_channel(guild, config, "token"),
             ))
             return
@@ -802,11 +849,10 @@ class AntiNuke(commands.Cog):
                     except (discord.Forbidden, discord.HTTPException):
                         pass
                     punishment_here = _resolve_punishment(config, "invite")
-                    asyncio.create_task(_punish(guild, executor_for_content, punishment_here))
-                    asyncio.create_task(send_log(
+                    asyncio.create_task(_punish_and_log(
                         guild,
+                        executor_for_content, punishment_here,
                         action=punishment_here,
-                        punishment=punishment_here,
                         target=executor_for_content,
                         moderator=guild.me,
                         reason="Compartió una invitación a otro servidor",
@@ -830,11 +876,10 @@ class AntiNuke(commands.Cog):
                     except (discord.Forbidden, discord.HTTPException):
                         pass
                     punishment_here = _resolve_punishment(config, "link")
-                    asyncio.create_task(_punish(guild, executor_for_content, punishment_here))
-                    asyncio.create_task(send_log(
+                    asyncio.create_task(_punish_and_log(
                         guild,
+                        executor_for_content, punishment_here,
                         action=punishment_here,
-                        punishment=punishment_here,
                         target=executor_for_content,
                         moderator=guild.me,
                         reason=f"Compartió un link no autorizado (`{domain}`)",
@@ -853,11 +898,10 @@ class AntiNuke(commands.Cog):
             hit = _check_rate(guild.id, executor_for_content.id, "spam_msg", threshold, window)
             if hit:
                 punishment_here = _resolve_punishment(config, "spam")
-                asyncio.create_task(_punish(guild, executor_for_content, punishment_here))
-                asyncio.create_task(send_log(
+                asyncio.create_task(_punish_and_log(
                     guild,
+                    executor_for_content, punishment_here,
                     action=punishment_here,
-                    punishment=punishment_here,
                     target=executor_for_content,
                     moderator=guild.me,
                     reason=f"Envió {threshold}+ mensajes en {window}s (spam)",
@@ -883,11 +927,10 @@ class AntiNuke(commands.Cog):
                 if executor and not _is_whitelisted(guild.id, executor.id, self.bot.owner_ids, module_key="everyone", member=executor):
                     config_here = _get_config(guild.id)
                     punishment_here = _resolve_punishment(config_here, "everyone")
-                    asyncio.create_task(_punish(guild, executor, punishment_here))
-                    asyncio.create_task(send_log(
+                    asyncio.create_task(_punish_and_log(
                         guild,
+                        executor, punishment_here,
                         action=punishment_here,
-                        punishment=punishment_here,
                         target=executor,
                         moderator=guild.me,
                         reason="Usó una mención @everyone / @here",
@@ -917,11 +960,10 @@ class AntiNuke(commands.Cog):
                 if executor.top_role < guild.me.top_role:
                     config_here = _get_config(guild.id)
                     punishment_here = _resolve_punishment(config_here, "mention")
-                    asyncio.create_task(_punish(guild, executor, punishment_here))
-                    asyncio.create_task(send_log(
+                    asyncio.create_task(_punish_and_log(
                         guild,
+                        executor, punishment_here,
                         action=punishment_here,
-                        punishment=punishment_here,
                         target=executor,
                         moderator=guild.me,
                         reason=f"Spam de menciones masivas ({mentions} menciones)",
@@ -954,85 +996,85 @@ class AntiNuke(commands.Cog):
 
             if hit and not _in_raid_mode(guild.id):
                 lockdown_minutes = an.get("raid_lockdown_minutes", 10)
-                asyncio.create_task(_enter_raid_mode(guild, lockdown_minutes))
-                asyncio.create_task(send_log(
-                    guild,
-                    action="lockdown",
-                    punishment="lockdown",
-                    target=guild.me,
-                    moderator=guild.me,
-                    reason=f"Se detectaron {threshold}+ ingresos en {window}s — posible raid",
-                    module="Anti-Raid",
-                    category="members",
-                    extra_fields=[("Lockdown", f"`{lockdown_minutes} minutos`", True)],
-                ))
+                async def start_raid_lockdown():
+                    applied = await _enter_raid_mode(guild, lockdown_minutes)
+                    fields = [("Lockdown", f"`{lockdown_minutes} minutos`", True)]
+                    if not applied:
+                        fields.extend([
+                            ("Resultado", "No aplicado", True),
+                            ("Detalle", "Discord rechazó el cambio del nivel de verificación.", False),
+                        ])
+                    await send_log(
+                        guild, action="lockdown", punishment="lockdown" if applied else None,
+                        target=guild.me, moderator=guild.me,
+                        reason=f"Se detectaron {threshold}+ ingresos en {window}s — posible raid",
+                        module="Anti-Raid", category="members", extra_fields=fields,
+                    )
+                asyncio.create_task(start_raid_lockdown())
 
             if _in_raid_mode(guild.id):
                 punishment_here = _resolve_punishment(config, "raid")
                 if punishment_here not in ("ban", "kick"):
                     punishment_here = "kick"
-                try:
-                    if punishment_here == "ban":
-                        await guild.ban(member, reason="AntiNuke: raid en curso", delete_message_days=0)
-                    else:
-                        await guild.kick(member, reason="AntiNuke: raid en curso")
-                    asyncio.create_task(send_log(
-                        guild,
-                        action=punishment_here,
-                        punishment=punishment_here,
-                        target=member,
-                        moderator=guild.me,
-                        reason="Ingresó al servidor mientras el modo raid estaba activo",
-                        module="Anti-Raid",
-                        category="members",
-                        channel_override=_resolve_module_log_channel(guild, config, "raid"),
-                    ))
-                except (discord.Forbidden, discord.HTTPException):
-                    pass
+                asyncio.create_task(_punish_and_log(
+                    guild, member, punishment_here, action=punishment_here,
+                    target=member, moderator=guild.me,
+                    reason="Ingresó al servidor mientras el modo raid estaba activo",
+                    module="Anti-Raid", category="members",
+                    channel_override=_resolve_module_log_channel(guild, config, "raid"),
+                ))
                 return  # no seguir evaluando bot-add / edad de cuenta para un raider ya expulsado
 
         if member.bot and an.get("anti_bot_add", True):
             executor = await _get_executor_with_retry(guild, discord.AuditLogAction.bot_add)
             if executor and not _is_whitelisted(guild.id, executor.id, self.bot.owner_ids, module_key="botadd", member=executor):
                 punishment_here = _resolve_punishment(config, "botadd")
-                asyncio.create_task(guild.kick(member, reason="AntiNuke: unauthorized bot add"))
-                asyncio.create_task(_punish(guild, executor, punishment_here))
-                asyncio.create_task(send_log(
-                    guild,
-                    action=punishment_here,
-                    punishment=punishment_here,
-                    target=executor,
-                    moderator=guild.me,
-                    reason="Bot agregado sin autorización al servidor",
-                    module="Anti-Bot Add",
-                    category="members",
-                    extra_fields=[("Bot Agregado", f"`{member}` (`{member.id}`)", False)],
-                    channel_override=_resolve_module_log_channel(guild, config, "botadd"),
-                ))
+                async def handle_bot_add():
+                    bot_removed = False
+                    try:
+                        await guild.kick(member, reason="AntiNuke: unauthorized bot add")
+                        bot_removed = True
+                    except (discord.Forbidden, discord.HTTPException) as e:
+                        log.warning(f"[{guild.name}] No se pudo expulsar al bot agregado {member}: {e}")
+                    fields = [("Bot Agregado", f"`{member}` (`{member.id}`)", False),
+                              ("Bot retirado", "Sí" if bot_removed else "No", True)]
+                    if not bot_removed:
+                        fields.append(("Resultado de retiro", "Discord rechazó la expulsión del bot agregado.", False))
+                    await _punish_and_log(
+                        guild, executor, punishment_here, action=punishment_here,
+                        target=executor, moderator=guild.me,
+                        reason="Bot agregado sin autorización al servidor",
+                        module="Anti-Bot Add", category="members", extra_fields=fields,
+                        channel_override=_resolve_module_log_channel(guild, config, "botadd"),
+                    )
+                asyncio.create_task(handle_bot_add())
 
         # Account age check
         min_age = an.get("min_account_age_days", 0)
         if min_age and not member.bot:
             age = (datetime.now(timezone.utc) - member.created_at).days
             if age < min_age:
-                try:
-                    await member.kick(reason=f"AntiNuke: account too new ({age}d, min {min_age}d)")
-                    asyncio.create_task(send_log(
-                        guild,
-                        action="kick",
-                        punishment="kick",
-                        target=member,
-                        moderator=guild.me,
+                async def remove_new_account():
+                    try:
+                        await member.kick(reason=f"AntiNuke: account too new ({age}d, min {min_age}d)")
+                        succeeded, detail = True, None
+                    except discord.Forbidden:
+                        succeeded, detail = False, "Discord rechazó la expulsión; revisa permisos y jerarquía de roles."
+                    except discord.HTTPException as e:
+                        succeeded, detail = False, f"Discord devolvió un error HTTP ({getattr(e, 'status', 'desconocido')})."
+                    fields = [
+                        ("Edad de la Cuenta", f"`{age} días`", True),
+                        ("Mínimo Requerido", f"`{min_age} días`", True),
+                    ]
+                    if not succeeded:
+                        fields.extend([("Resultado", "No aplicada", True), ("Detalle", detail, False)])
+                    await send_log(
+                        guild, action="kick", punishment="kick" if succeeded else None,
+                        target=member, moderator=guild.me,
                         reason=f"Edad de cuenta por debajo del mínimo ({age}/{min_age} días)",
-                        module="Anti-Cuenta Nueva",
-                        category="members",
-                        extra_fields=[
-                            ("Edad de la Cuenta", f"`{age} días`", True),
-                            ("Mínimo Requerido", f"`{min_age} días`", True),
-                        ],
-                    ))
-                except Exception:
-                    pass
+                        module="Anti-Cuenta Nueva", category="members", extra_fields=fields,
+                    )
+                asyncio.create_task(remove_new_account())
 
     # ── ANTI-GUILD UPDATE ─────────────────────────────────────────────────────
 
@@ -1058,11 +1100,10 @@ class AntiNuke(commands.Cog):
         if not changes:
             return
         punishment_here = _resolve_punishment(config, "serverupdate")
-        asyncio.create_task(_punish(guild, executor, punishment_here))
-        asyncio.create_task(send_log(
+        asyncio.create_task(_punish_and_log(
             guild,
+            executor, punishment_here,
             action=punishment_here,
-            punishment=punishment_here,
             target=executor,
             moderator=guild.me,
             reason="Actualización no autorizada del servidor",
@@ -1090,11 +1131,10 @@ class AntiNuke(commands.Cog):
         executor = await _get_executor_with_retry(guild, discord.AuditLogAction.member_prune)
         if executor and not _is_whitelisted(guild.id, executor.id, self.bot.owner_ids, module_key="prune", member=executor):
             punishment_here = _resolve_punishment(config, "prune")
-            asyncio.create_task(_punish(guild, executor, punishment_here))
-            asyncio.create_task(send_log(
+            asyncio.create_task(_punish_and_log(
                 guild,
+                executor, punishment_here,
                 action=punishment_here,
-                punishment=punishment_here,
                 target=executor,
                 moderator=guild.me,
                 reason="Expulsión masiva (prune) no autorizada",
@@ -1144,11 +1184,10 @@ class AntiNuke(commands.Cog):
         if executor is None or _is_whitelisted(guild.id, executor.id, self.bot.owner_ids, module_key="roleperm", member=executor):
             return
         punishment_here = _resolve_punishment(config, "roleperm")
-        asyncio.create_task(_punish(guild, executor, punishment_here))
-        asyncio.create_task(send_log(
+        asyncio.create_task(_punish_and_log(
             guild,
+            executor, punishment_here,
             action=punishment_here,
-            punishment=punishment_here,
             target=executor,
             moderator=guild.me,
             reason="Permisos peligrosos otorgados a un rol",

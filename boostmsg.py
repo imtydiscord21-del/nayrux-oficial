@@ -100,7 +100,9 @@ class BoostMsg(commands.Cog):
         if not cfg:
             return await error(ctx, f"No hay un mensaje configurado. Usa `{hint}`.")
         content, embed, view, problems = build_message(
-            cfg["message"], ctx.author, ctx.guild, loader=lambda n: get_saved(ctx.guild.id, n)
+            cfg["message"], ctx.author, ctx.guild,
+            loader=lambda n: get_saved(ctx.guild.id, n), channel=ctx.channel,
+            boost_count=await asyncio.to_thread(db.get_boost_count, ctx.guild.id, ctx.author.id),
         )
         if problems:
             return await error(ctx, "El mensaje tiene problemas:\n" + "\n".join(f"• {p}" for p in problems))
@@ -159,7 +161,7 @@ class BoostMsg(commands.Cog):
 
     # ── Evento ───────────────────────────────────────────────────────────────
 
-    async def _send(self, member: discord.Member, key: str):
+    async def _send(self, member: discord.Member, key: str, boost_count=None):
         cfg = await asyncio.to_thread(self._get, member.guild.id, key)
         if not cfg:
             return
@@ -168,7 +170,9 @@ class BoostMsg(commands.Cog):
             log.warning(f"[{member.guild.name}] El canal de {key} ya no existe")
             return
         content, embed, view, problems = await asyncio.to_thread(
-            build_message, cfg["message"], member, member.guild, lambda n: get_saved(member.guild.id, n)
+            build_message, cfg["message"], member, member.guild,
+            lambda n: get_saved(member.guild.id, n),
+            channel=channel, boost_count=boost_count,
         )
         if problems:
             log.warning(f"[{member.guild.name}] Problemas en {key}: {problems}")
@@ -195,7 +199,16 @@ class BoostMsg(commands.Cog):
         if not (boosted or unboosted):
             return
         try:
-            await self._send(after, "boostmsg_config" if boosted else "unboostmsg_config")
+            boost_count = None
+            if boosted:
+                boost_count = await asyncio.to_thread(
+                    db.record_boost_start, after.guild.id, after.id, after.premium_since
+                )
+            else:
+                boost_count = await asyncio.to_thread(db.get_boost_count, after.guild.id, after.id)
+            await self._send(
+                after, "boostmsg_config" if boosted else "unboostmsg_config", boost_count
+            )
             await self._rewards(after, give=boosted)
         except discord.Forbidden:
             log.warning(f"[{after.guild.name}] Sin permisos para el mensaje de boost")

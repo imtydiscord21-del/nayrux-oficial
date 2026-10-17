@@ -92,7 +92,9 @@ class Welcome(commands.Cog):
         if channel is None:
             return
 
-        embed, content, view = build_message(_get_parsed(entry), member=member)
+        embed, content, view = build_message(
+            _get_parsed(entry), member=member, guild=guild, channel=channel
+        )
         kwargs = {}
         if content:
             kwargs["content"] = content
@@ -212,7 +214,9 @@ class Welcome(commands.Cog):
 
         # Previsualiza la primera entrada en el canal actual
         entry = entries[0]
-        embed, content, view = build_message(_get_parsed(entry), member=ctx.author)
+        embed, content, view = build_message(
+            _get_parsed(entry), member=ctx.author, guild=ctx.guild, channel=ctx.channel
+        )
 
         kwargs = {}
         if content:
