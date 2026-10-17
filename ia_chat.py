@@ -33,10 +33,9 @@ import logging
 
 log = logging.getLogger("antinuke.ai_chat")
 
-# ── API key hardcodeada (fallback si no hay variable de entorno) ───────────
-HARDCODED_API_KEY = "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"
+# API credentials must come from the Railway environment, never the repository.
 
-AI_API_KEY = os.getenv("AI_API_KEY", HARDCODED_API_KEY)
+AI_API_KEY = os.getenv("AI_API_KEY")
 AI_BASE_URL = os.getenv("AI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
 AI_MODEL = os.getenv("AI_MODEL", "gpt-4o-mini")
 

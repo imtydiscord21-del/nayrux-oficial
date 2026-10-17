@@ -104,7 +104,7 @@ class AntiNukeBot(commands.Bot):
             "boost",
             "vanity_watch",
             "changelog",
-            "ai_chat",
+            "ia_chat",
             "fakepermissions",
             "instagram",
             "saved_embeds",
@@ -112,7 +112,7 @@ class AntiNukeBot(commands.Bot):
             "boostmsg",
             "afk",
             "info_extra",
-            "emoji_setup",
+            "emojis_setup",
             "vanity_sniper",
             "github_updates",
         ]
@@ -247,9 +247,13 @@ class AntiNukeBot(commands.Bot):
                 text = "Uno de los argumentos no es válido."
             await ctx.send(embed=discord.Embed(description=text, color=0xed4245))
         else:
-            log.error(f"Error en {ctx.command}: {error}")
+            log.error(
+                "Error en el comando %s",
+                ctx.command,
+                exc_info=(type(error), error, error.__traceback__),
+            )
             await ctx.send(embed=discord.Embed(
-                description=f"Ocurrió un error ejecutando el comando: `{error}`",
+                description="Ocurrió un error interno al ejecutar el comando. El equipo ya tiene el detalle para revisarlo.",
                 color=0xed4245,
             ))
 
