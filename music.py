@@ -153,7 +153,7 @@ class Music(commands.Cog):
             is_playlist = isinstance(results, wavelink.Playlist)
         else:
             tracks = []
-            sources = (wavelink.TrackSource.YouTube,)
+            sources = (wavelink.TrackSource.YouTubeMusic, wavelink.TrackSource.YouTube)
             for source in sources:
                 try:
                     found = await wavelink.Playable.search(query, source=source)
