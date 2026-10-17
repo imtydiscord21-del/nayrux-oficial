@@ -349,13 +349,23 @@ class GithubUpdates(commands.Cog):
 
     async def public_commands(self, request):
         from help import CATEGORIES, HIDDEN_CATEGORIES
+        from cmd_help import COMMAND_INFO
 
         categories = []
         for key, data in CATEGORIES.items():
             if key in HIDDEN_CATEGORIES:
                 continue
-            sections = [{"title": title, "commands": commands, "note": note}
-                        for title, commands, note in data["sections"]]
+            sections = []
+            for title, commands, note in data["sections"]:
+                items = []
+                for syntax in commands:
+                    raw_name = syntax.split(" — ", 1)[0].split(" / ", 1)[0].strip().lstrip(",")
+                    name = re.split(r"\s+(?=[<\[])", raw_name, maxsplit=1)[0].strip()
+                    command = self.bot.get_command(name)
+                    info = COMMAND_INFO.get(name, {})
+                    description = info.get("desc") or (command.short_doc or command.help or "").split("\n", 1)[0].strip() if command else info.get("desc", "")
+                    items.append({"name": name, "syntax": syntax, "description": description})
+                sections.append({"title": title, "items": items, "note": note})
             categories.append({"id": key, "name": data["label"], "description": data["description"], "sections": sections})
         return web.json_response({"prefix": ",", "categories": categories}, headers={"Cache-Control": "no-store"})
 
