@@ -169,17 +169,12 @@ class AntiNukeBot(commands.Bot):
             status, activity = self._status_override
             await self.change_presence(status=status, activity=activity)
             return
-        statuses = [
-            (discord.ActivityType.watching, "la seguridad de tu servidor"),
-            (discord.ActivityType.watching, f"{len(self.guilds)} servidores"),
-            (discord.ActivityType.playing, "Mencióname para ver mis comandos"),
-            (discord.ActivityType.competing, "protección de comunidades"),
-        ]
-        activity_type, name = statuses[self._status_index % len(statuses)]
-        self._status_index += 1
         await self.change_presence(
             status=discord.Status.online,
-            activity=discord.Activity(type=activity_type, name=name),
+            activity=discord.CustomActivity(
+                name="Usa ,help · ,play · ,ban",
+                emoji="✨",
+            ),
         )
 
     @rotate_status.before_loop
