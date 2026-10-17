@@ -110,6 +110,7 @@ class AntiNukeBot(commands.Bot):
             "info_extra",
             "emoji_setup",
             "vanity_sniper",
+            "github_updates",
         ]
         for cog in cogs:
             try:
