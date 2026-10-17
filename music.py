@@ -72,6 +72,7 @@ class Music(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self._handling_failures: set[int] = set()
+        self._search_alternatives: dict[int, list[wavelink.Playable]] = {}
 
     async def _edit_feedback(self, track: wavelink.Playable, embed: discord.Embed) -> bool:
         extras = dict(track.extras)
@@ -140,26 +141,56 @@ class Music(commands.Cog):
 
         msg = await ctx.send(embed=discord.Embed(description="Buscando...", color=0x2b2d31))
 
-        search_query = query if query.startswith(("http://", "https://")) else f"ytsearch:{query}"
-        try:
-            results = await wavelink.Playable.search(search_query)
-        except Exception:
-            log.warning("Falló la búsqueda de música", exc_info=True)
-            return await msg.edit(embed=_error_embed("No pude buscar esa canción. Inténtalo de nuevo."))
+        is_url = query.startswith(("http://", "https://"))
+        is_playlist = False
+        if is_url:
+            try:
+                results = await wavelink.Playable.search(query)
+            except Exception:
+                log.warning("Falló la búsqueda de música", exc_info=True)
+                return await msg.edit(embed=_error_embed("No pude buscar esa canción. Inténtalo de nuevo."))
+            tracks = list(results.tracks) if isinstance(results, wavelink.Playlist) else list(results or [])
+            is_playlist = isinstance(results, wavelink.Playlist)
+        else:
+            tracks = []
+            for prefix in ("ytsearch:", "ytmsearch:"):
+                try:
+                    found = await wavelink.Playable.search(f"{prefix}{query}")
+                    if found and not isinstance(found, wavelink.Playlist):
+                        tracks.extend(found)
+                except Exception:
+                    log.warning("Falló la búsqueda %s", prefix, exc_info=True)
+            unique_tracks = {}
+            for track in tracks:
+                unique_tracks.setdefault(track.identifier, track)
+            tracks = list(unique_tracks.values())[:6]
 
-        if not results:
+        if not tracks:
             return await msg.edit(embed=_error_embed("No encontré ninguna canción con eso."))
 
-        tracks = list(results.tracks) if isinstance(results, wavelink.Playlist) else [results[0]]
-        tracks = tracks[:100]
+        tracks = tracks[:100] if is_playlist else tracks[:6]
+        alternatives = [] if is_playlist or is_url else tracks[1:]
+        if alternatives:
+            tracks = tracks[:1]
         if not tracks:
             return await msg.edit(embed=_error_embed("La lista no contiene canciones disponibles."))
-        fallback_query = query if not query.startswith(("http://", "https://")) else f"{tracks[0].title} {tracks[0].author}"
+        fallback_query = query if not is_url else f"{tracks[0].title} {tracks[0].author}"
+        search_id = msg.id if alternatives else None
         for track in tracks:
-            track.extras = {"requester_id": ctx.author.id, "search_query": fallback_query}
+            track.extras = {
+                "requester_id": ctx.author.id,
+                "search_query": fallback_query,
+                **({"search_id": search_id} if search_id else {}),
+            }
+        if search_id:
+            self._search_alternatives[search_id] = alternatives
 
         if not player.playing and not player.paused and player.queue.is_empty:
             track = tracks.pop(0)
+            if alternatives:
+                self._search_alternatives[ctx.guild.id] = alternatives
+            else:
+                self._search_alternatives.pop(ctx.guild.id, None)
             track.extras = {
                 **dict(track.extras),
                 "feedback_channel_id": ctx.channel.id,
@@ -295,6 +326,10 @@ class Music(commands.Cog):
     @commands.Cog.listener()
     async def on_wavelink_track_end(self, payload: wavelink.TrackEndEventPayload):
         player = payload.player
+        if payload.reason != "loadFailed":
+            search_id = dict(payload.track.extras).get("search_id")
+            if search_id:
+                self._search_alternatives.pop(search_id, None)
         if player is None or payload.reason in {"replaced", "loadFailed"} or player.queue.is_empty:
             return
         next_track = await player.queue.get_wait()
@@ -303,6 +338,9 @@ class Music(commands.Cog):
     @commands.Cog.listener()
     async def on_wavelink_track_start(self, payload: wavelink.TrackStartEventPayload):
         track = payload.track
+        search_id = dict(track.extras).get("search_id")
+        if search_id:
+            self._search_alternatives.pop(search_id, None)
         await self._edit_feedback(track, _track_embed("Reproduciendo ahora", track))
 
     @commands.Cog.listener()
@@ -326,14 +364,35 @@ class Music(commands.Cog):
             extras = dict(track.extras)
             tried_fallback = extras.get("soundcloud_fallback", False)
 
+            search_id = extras.get("search_id")
+            candidates = self._search_alternatives.get(search_id, [])
+            if track.source == "youtube" and candidates:
+                alternative = candidates.pop(0)
+                alternative.extras = {
+                    **dict(alternative.extras),
+                    **extras,
+                }
+                await self._edit_feedback(
+                    alternative,
+                    discord.Embed(description="Esta versión requiere acceso. Pruebo otra…", color=0x2b2d31),
+                )
+                await player.play(alternative)
+                return
+
             if track.source == "youtube" and not tried_fallback:
-                query = extras.get("search_query") or f"{track.title} {track.author}"
-                try:
-                    results = await wavelink.Playable.search(f"scsearch:{query}")
-                    alternatives = list(results.tracks) if isinstance(results, wavelink.Playlist) else list(results)
-                except Exception:
-                    log.warning("Falló la búsqueda alternativa en SoundCloud", exc_info=True)
-                    alternatives = []
+                title_artist = f"{track.title} {track.author}".strip()
+                queries = list(dict.fromkeys((title_artist, extras.get("search_query", ""))))
+                alternatives = []
+                for query in queries:
+                    if not query:
+                        continue
+                    try:
+                        results = await wavelink.Playable.search(f"scsearch:{query}")
+                        alternatives = list(results.tracks) if isinstance(results, wavelink.Playlist) else list(results or [])
+                    except Exception:
+                        log.warning("Falló la búsqueda alternativa en SoundCloud (%s)", query, exc_info=True)
+                    if alternatives:
+                        break
 
                 if alternatives:
                     alternative = alternatives[0]
@@ -343,11 +402,14 @@ class Music(commands.Cog):
                         "soundcloud_fallback": True,
                         "feedback_channel_id": extras.get("feedback_channel_id"),
                         "feedback_message_id": extras.get("feedback_message_id"),
+                        "search_id": search_id,
                     }
                     await player.play(alternative)
                     if player.channel:
                         await player.channel.send(embed=_success_embed("YouTube bloqueó esa pista; probando una copia de SoundCloud."))
                     return
+                if search_id:
+                    self._search_alternatives.pop(search_id, None)
 
             channel = self.bot.get_channel(extras.get("feedback_channel_id")) if extras.get("feedback_channel_id") else player.channel
             if channel:
