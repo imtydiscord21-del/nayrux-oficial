@@ -1,0 +1,36 @@
+{
+  "surface": "Zaay web",
+  "direction": "Hoja editorial de turno en vivo para administradores de Discord",
+  "tokens": {
+    "color": {
+      "paper": "#f7f6f9",
+      "panel": "#ffffff",
+      "ink": "#111014",
+      "dark": "#0a090d",
+      "darkInk": "#fbfaff",
+      "violet": "#7138e8",
+      "violetBright": "#b99bff",
+      "violetPale": "#eee7ff",
+      "online": "#37c987",
+      "offline": "#ec7080"
+    },
+    "font": {
+      "body": "IBM Plex Sans",
+      "display": "Instrument Serif",
+      "displayFallback": "Georgia"
+    },
+    "radius": {
+      "base": "16px",
+      "card": "14px"
+    }
+  },
+  "responsive": {
+    "builderTwoPanelMinWidth": "821px",
+    "builderMobileSwitchMaxWidth": "820px"
+  },
+  "motion": {
+    "navigation": "280ms cubic-bezier(.2,.75,.25,1)",
+    "commandPreview": "190ms cubic-bezier(.2,.75,.25,1)",
+    "reducedMotion": "disable non-essential motion"
+  }
+}

@@ -1,0 +1,330 @@
+{
+ "version": 1,
+ "at": "2026-10-17T17:17:55.604Z",
+ "seed": 1681966352,
+ "redraws": 0,
+ "input": {
+  "brief": "Zaay, Discord bot para protección de servidores; los administradores verifican sus funciones antes de invitarlo y crean embeds para sus comunidades",
+  "sector": "saas",
+  "tone": "editorial",
+  "have": [],
+  "keep": [
+   "palette",
+   "type"
+  ],
+  "avoid": [],
+  "sections": [
+   "features"
+  ],
+  "direction": "split-stage"
+ },
+ "imagery": "interface",
+ "allow": [],
+ "direction": {
+  "id": "split-stage",
+  "name": "The split stage",
+  "sectors": [
+   "restaurant",
+   "hospitality",
+   "personal-portfolio",
+   "physical-product",
+   "fashion",
+   "real-estate",
+   "health",
+   "culture",
+   "ecommerce",
+   "saas",
+   "consumer-app"
+  ],
+  "tones": [
+   "warm",
+   "quiet",
+   "editorial"
+  ],
+  "needs": [],
+  "idea": "Half the screen never moves. One side is a fixed photograph (or object, or product view) that stays in place for the whole visit; the other side is a calm scrolling column with everything you need to read. The fixed half keeps the feeling present while the reader gets on with the facts, like sitting in the room while reading the menu. As sections pass, the fixed image may quietly change to the one that matches.",
+  "composition": "Desktop: a two-column page, 50/50 or 45/55. One column is `position: sticky; top: 0; height: 100svh` and holds a single photograph filling it edge to edge, or the object centred on a flat field. The other column scrolls and holds all content in a single narrow measure (max 46ch) with comfortable padding (48–72px): name and one-line description first, then sections separated by generous space, then contact and footer. Headings in the scrolling column are modest (32–44px). The column grounds differ: photograph on one side, flat paper colour on the other, meeting at a clean vertical edge. On a phone the fixed half becomes a 60svh image at the top that stays sticky behind the first section, then releases.",
+  "typography": "A text-first setting: a readable serif or a calm sans at 17–19px, with one display size for the name. Left-aligned throughout.",
+  "typeClasses": [
+   "serif-text",
+   "serif-display",
+   "grotesk-light",
+   "slab"
+  ],
+  "colour": "The paper colour of the reading column is chosen against the photograph: a tone taken from its shadows or its lightest area. One ink, optionally one accent ink for links and the action.",
+  "paletteTags": [
+   "two-tone",
+   "earth",
+   "light-neutral",
+   "photographic-neutral"
+  ],
+  "imagery": "One excellent portrait-orientation photograph for the fixed half, plus three or four more that crossfade in as their sections arrive. Small inline photographs in the reading column are optional and should be few.",
+  "sectionTags": [
+   "quiet",
+   "photo-led",
+   "type-led"
+  ],
+  "motion": "slow-crossfade",
+  "richness": "A full-height photograph always in view, against a quiet, well-set column of text.",
+  "pitfalls": "The reading column must be genuinely well typeset, since it is half the page. Do not put cards or grids in it. Check that the fixed image crops well at short viewport heights. In blind tests the commonest complaint was monotony: several screens of the same split with only the text changing. Change what the reading half holds from section to section (a list, a large figure, a table, a full-colour panel, a drawing) and let at least one section break the split and run full width.",
+  "seenIn": [
+   "opl-le-petit-bleu",
+   "opl-rafael-derolez-2026",
+   "opl-flowjam-2",
+   "opl-devonshire"
+  ],
+  "allow": []
+ },
+ "hero": {
+  "id": "inset-photo-wordmark-crossing",
+  "name": "Inset photograph, crossing wordmark",
+  "archetype": "split",
+  "directions": [
+   "split-stage",
+   "dark-room",
+   "name-as-monument"
+  ],
+  "needs": [],
+  "blueprint": "One deep, dark flat field. A tall portrait photograph fills the left 47% of the viewport, inset 20px from the top, left and bottom edges, with a 12px radius and object-fit: cover; it is position: sticky for the length of the page while the right side scrolls. Five text links at 15px sit top-right on a 32px margin, the last of them the single action. There is no logo at the top. In the right half, at 44% of the height and centred on that half's own axis, one supporting sentence in the light ink at 24px on up to three lines, max 26ch. Along the bottom runs the name in lowercase at clamp(120px, 12vw, 200px), light or regular weight, tracking -0.04em, on one line. It starts over the photograph's lower-right corner, overlapping the image by about 10% of the viewport width (z-index above it; mix-blend-mode: difference keeps the letters legible on the picture), and ends flush with the right margin, its baseline 40px above the bottom edge.",
+  "mobile": "The photograph takes the top 58% of the screen, inset 12px, with the same radius. The name runs under it at 21vw on one line, its ascenders overlapping the photograph's bottom edge by 3vw. The sentence follows at 17px, left-aligned on a 20px margin. Links reduce to a menu word and the action on the top row, set over the photograph.",
+  "headline": "The name in lowercase on one line, up to 9 characters at this size; a longer name drops to 9vw.",
+  "motion": "scaling-wordmark",
+  "seenIn": [
+   "aww-lxl-creative",
+   "opl-kereliott"
+  ]
+ },
+ "type": null,
+ "palette": null,
+ "photos": {
+  "set": "architecture",
+  "title": "Architecture",
+  "note": "structure, lines, bridges, facades and building interiors",
+  "treatment": null,
+  "others": [
+   "fog-and-quiet",
+   "sky-and-space"
+  ],
+  "photos": [
+   {
+    "id": 618,
+    "alt": "Curving glass and steel lattice roof in black and white",
+    "tone": "light",
+    "colours": [
+     "white",
+     "grey",
+     "black"
+    ],
+    "mono": true,
+    "calm": "none",
+    "quality": 5,
+    "ratio": 1.5,
+    "by": "Mika Ruusunen",
+    "page": "https://unsplash.com/photos/ypVM8PnygUo"
+   },
+   {
+    "id": 693,
+    "alt": "Red suspension bridge tower rising from fog above rugged cliffs",
+    "tone": "mid",
+    "colours": [
+     "rust red",
+     "grey",
+     "dark teal"
+    ],
+    "mono": false,
+    "calm": "left",
+    "quality": 5,
+    "ratio": 2.15,
+    "by": "Rob Bye",
+    "page": "https://unsplash.com/photos/bopC0sTGu-E"
+   },
+   {
+    "id": 942,
+    "alt": "White angular concrete building against a black sky",
+    "tone": "dark",
+    "colours": [
+     "black",
+     "white",
+     "pale grey"
+    ],
+    "mono": true,
+    "calm": "top",
+    "quality": 5,
+    "ratio": 1.5,
+    "by": "Carl Nenzen Loven",
+    "page": "https://unsplash.com/photos/busqfOj6i80"
+   },
+   {
+    "id": 620,
+    "alt": "White arched bridge spanning grey water under a pale sky",
+    "tone": "light",
+    "colours": [
+     "white",
+     "pale grey",
+     "charcoal"
+    ],
+    "mono": true,
+    "calm": "bottom",
+    "quality": 5,
+    "ratio": 1.5,
+    "by": "Matthew Wiebe",
+    "page": "https://unsplash.com/photos/HeVd38MWnw4"
+   }
+  ]
+ },
+ "motion": {
+  "id": "scaling-wordmark",
+  "name": "Scaling wordmark",
+  "description": "The giant name responds to the scroll: as the first screen leaves, the wordmark scales down a few percent (or grows from 0.94 to 1 as the footer arrives) on a scroll-linked timeline, so the monument feels heavy. Travel stays under 8%. Static fallback where scroll timelines are unsupported. Recipe: 'Scroll-linked progress' in references/motion.md, animating `scale`."
+ },
+ "sections": [
+  {
+   "id": "features-fixed-output-controls-in-text",
+   "role": "features",
+   "name": "Fixed output, live controls",
+   "shape": "pinned",
+   "tags": [
+    "ui-led",
+    "quiet"
+   ],
+   "directions": [
+    "split-stage",
+    "product-performs",
+    "quiet-instrument",
+    "editorial-report",
+    "colour-chapters",
+    "dark-room"
+   ],
+   "needs": [],
+   "blueprint": "A split the reader operates. Left, columns 1–6: a flat colour field that is position: sticky; top: 0; height: 100svh, edge to edge, holding one thing the product makes (a card, an email, a chart, a rendered page) centred at true size, about 420px wide, root marked data-ui. Right, columns 8–12: a reading column no wider than 44ch, with four or five capability blocks 50vh apart. Each block is a sentence at 28–32px, a paragraph at 17px, and directly beneath it one real control at interface size: a slider, a segmented choice, a toggle, a short text field. Operating a control changes the fixed output on the left at once, and changes persist, so by the last block the reader has configured their own. The section heading, two to four words at 40–44px, opens the right column, 72px from the top.",
+   "mobile": "The output sits in a sticky field at the top, 42svh tall, cropped to its most telling region, not shrunk. Blocks scroll beneath on the page ground: sentence at 22px, paragraph at 16px, control at full width with 44px targets. The field releases after the last block.",
+   "seenIn": [
+    "opl-dialkit",
+    "aww-cerebrium"
+   ]
+  }
+ ],
+ "references": [
+  {
+   "id": "opl-flowjam-2",
+   "name": "Flowjam",
+   "url": "https://flowjam.com",
+   "source": "One Page Love",
+   "kind": "agency",
+   "score": 6.8,
+   "idea": "A persistent frosted sidebar card holds the pitch and buttons while a soft-serif content column scrolls past it; beyond that there is no idea stronger than proof by logos and videos.",
+   "mood": [
+    "soft",
+    "friendly",
+    "grainy",
+    "startup"
+   ],
+   "archetype": "other: sticky-sidebar-statement",
+   "hero": "Grainy off-white page. A tall rounded card about 26% of the viewport wide is pinned at the left and runs off the bottom; frosted over blurred pink and yellow flowers, it holds the logo, a two-line serif tagline, a short blurb and two pill buttons in hot pink and charcoal. The main column starts 32% from the left: a hot-pink pill badge, a three-line serif headline at 4.2vw, then a paragraph whose first sentence is grey and the rest black. A lone charcoal pill button floats far right at mid-height. Below: a heart icon with a proof line, then the top of a four-column logo grid with dotted borders.",
+   "type": "Gelica throughout: a soft, slightly bulbous serif at regular weight, 60px headline with tight -0.05em tracking, 16 to 19px body, down to about 9px in the sidebar. One family for everything including buttons keeps the tone warm but flattens the difference between labels and prose.",
+   "colour": "#f8f8f6 #e7e8e4 #1c0f1f #ff4fe0 #0c0c0c #7b3ff2 — Warm paper white with grain, near-black aubergine text and one hot-pink accent used for the badge and primary button; a purple heart appears once. The footer flips to black.",
+   "imagery": "Rounded-corner video thumbnails of founders talking to camera and product UI clips, each with a small round play button bottom-left; monochrome client logos in a dotted-line grid; blurred floral blobs behind the frosted sidebar.",
+   "layout": "A fixed 26% sidebar card at left for the whole scroll; content occupies one column to its right, split into two for video tiles and four for logos. Sections are separated by whitespace only. The footer is a rounded black panel that still leaves the sidebar in place.",
+   "sections": [
+    {
+     "role": "proof",
+     "description": "Four-column grid of client logos drawn with faint dotted cell borders, each cell roughly 240px wide and 115px tall with the logo centred in dark grey monochrome. Sixteen or more logos over four rows, no captions. Above it, a centred line with a purple heart glyph and a sentence whose first word is black and the rest grey serves as the heading."
+    },
+    {
+     "role": "work",
+     "description": "Two-column grid of video cards. Each card has a header row with the client name in 14px serif and a one-line result in tiny grey beneath it at left, and a small outlined pill link at right; then a 16:9 thumbnail with about 10px radius and a round play button over its bottom-left corner. Cards are divided by hairlines rather than boxes, and some thumbnails are flat type frames instead of photos."
+    },
+    {
+     "role": "footer",
+     "description": "A rounded black panel inset from the page edges, sitting right of the sidebar. Its background is a short phrase repeated in dark-grey serif at about 5vw, rows offset so the words tile like wallpaper. Centred over it: a two-line white serif headline at about 2.5vw and a small stat line. The lower third holds the logo at left and four narrow columns of tiny text."
+    }
+   ],
+   "steal": [
+    "Pin a narrow card with logo, one-line pitch and both actions beside the scrolling content, so the call to action never leaves the screen and no top nav is needed.",
+    "Set one sentence of a paragraph in grey and the rest in black to rank two claims without changing size or weight.",
+    "Tile a short phrase as dark-on-black wallpaper behind the footer headline."
+   ]
+  },
+  {
+   "id": "opl-rafael-derolez-2026",
+   "name": "Rafael Derolez",
+   "url": "https://derolez.dev/",
+   "source": "One Page Love",
+   "kind": "personal-portfolio",
+   "score": 7.3,
+   "idea": "A portfolio as a phone carousel: a fixed text rail on the left narrates whichever phone-shaped screen is centred on the right.",
+   "mood": [
+    "compact",
+    "dark",
+    "friendly",
+    "app-like"
+   ],
+   "archetype": "split-text-media",
+   "hero": "Dark charcoal page split by a vertical hairline at 30% width. Left rail: a 55px header row with name, slash and current section as a breadcrumb in 16px sans, plus a small cobalt ticket-shaped hire button with a perforated divider and arrow; below a hairline, four short paragraphs of 16px grey text with white links, top-aligned, leaving the lower 40% of the rail empty. Right 70%: three phone-proportioned frames with large rounded corners in a row; the centre one upright, full brightness and about 680px tall, the outer two smaller, dimmed and rotated in perspective toward the centre.",
+   "type": "Suisse at a single 16px size, weight 400, for everything; hierarchy comes only from grey versus white and from the breadcrumb. The one larger setting is a bold two-word line inside the blue contact card. No display type at all.",
+   "colour": "#18181b #030303 #969696 #173ded #ffffff — Zinc-black field with grey text and white for links and the active breadcrumb. Cobalt blue appears only on the hire button and contact card; all other colour comes from the app screenshots.",
+   "imagery": "Phone-shaped frames with large corner radius holding app screens, a selfie and short videos; side frames are dimmed to about 40% and tilted in 3D like a cover-flow.",
+   "layout": "Single viewport, no page scroll: a fixed 432px text rail with 32px padding and a media stage filling the rest. Scrolling advances the carousel and replaces the rail's text; hairlines separate rail, header and stage. On mobile the stage stacks above the rail.",
+   "sections": [
+    {
+     "role": "work",
+     "description": "Same two-part frame. The breadcrumb's last word changes to the project name; under the header sit three tiny grey meta tags (employer, platform), then two paragraphs. On the stage the centred phone shows the product screen at full brightness while neighbours show the previous and next items dimmed and tilted, so the carousel works as both navigation and preview."
+    },
+    {
+     "role": "about",
+     "description": "In the rail, a cobalt card shaped like a ticket with notched sides: tiny labels top-left and top-right, a large bold two-word heading, name and local time in small text, then a perforated lower strip with email at left and a copy button at right. Under it, a career list: company in white with dates in small grey on one line, role on the next, and a small arrow at the far right of each row."
+    }
+   ],
+   "steal": [
+    "Use a breadcrumb (name / current item) as the only heading and update its last word as the content changes.",
+    "Show work in device-shaped frames arranged as a cover-flow, with neighbours dimmed and tilted so the next item is always previewed.",
+    "Shape the contact card like a ticket with notches and a perforated strip so the one accent-colour element feels like an object."
+   ]
+  },
+  {
+   "id": "aww-alethia",
+   "name": "Alethia",
+   "url": "https://www.alethia.earth/",
+   "source": "Awwwards Site of the Day",
+   "kind": "saas",
+   "score": 7.9,
+   "idea": "Nature as measured data: photoreal moss-covered rocks and terrain float in a dark field, annotated with instrument-style reticles and mono readouts.",
+   "mood": [
+    "scientific",
+    "lush",
+    "precise",
+    "dark",
+    "premium"
+   ],
+   "archetype": "product-object-centre",
+   "hero": "Dark forest-green field. A photoreal 3D boulder covered in moss and small plants floats at centre, about 45% of the viewport wide, with three smaller rocks drifting at lower left, upper right and lower right, the last cropped by the edge. A three-line white headline at about 5vw, medium weight with tight tracking, is flush to a 30px left margin near the top and overlaps the rock's left side. Under it, an outlined button in mono caps with a lime arrow square. A hairline square reticle sits on the rock with a small mono data tag and three lines of readout. Bottom-left: a three-line 24px statement. Bottom-right: a scroll hint.",
+   "type": "Geist Medium for headlines at about 70px with -0.05em tracking; Geist Regular at 24 to 40px for statements, also tight; Geist Mono in bold uppercase for navigation, buttons, tags, bracketed card labels and data readouts at 10 to 14px. The footer wordmark is drawn about 330px tall.",
+   "colour": "#0f1f10 #ffffff #000000 #c6f19d #6d8b3a #9a9d9a — Forest green, black and white sections with a pale lime accent on arrow squares, tags, hotspots and the footer wordmark. Renders stay in moss greens and stone browns under grey fog.",
+   "imagery": "Photoreal CG of mossy rocks, seedlings, soil and a weather-station mast, shown floating on flat colour or as full-bleed foggy macro landscapes; two nature photographs in rounded cards. Hairline reticles, lime hotspots and mono captions are laid over them.",
+   "layout": "30px margins, with text habitually docked in the corners of full-viewport scenes: headline top-left, statement bottom-left or top-right. Full-bleed 3D scenes alternate with a white card section and a black centred statement; the page ends on a full-width wordmark.",
+   "sections": [
+    {
+     "role": "intro",
+     "description": "A full-bleed macro landscape of moss mounds, bare soil and one seedling under grey fog. A five-line statement at about 40px occupies the top-right, from 35% to 84% of the width, with a three-line mono micro-label at the far top-left. Four lime circular markers with a dotted glyph are pinned across the terrain, each followed by a three-line mono caption in white."
+    },
+    {
+     "role": "features",
+     "description": "A full-bleed foggy render of a weather-station mast among rocks and shrubs. Upper left, a three-line heading preceded by a small diagonal arrow. At left, a frosted-glass rounded card about 310px wide holds a small line chart under a large figure. Right of the mast, a stack of five translucent rows about 420px wide, each a mono index number, an uppercase mono label and a plus sign, works as an accordion over the image."
+    },
+    {
+     "role": "showcase",
+     "description": "White section. A lime rectangular mono tag sits above a two-line heading at about 53px, both flush left with the right half empty. Below, two image cards share the full width with a 20px gap and roughly 19px radius: a dewy leaf macro and an aerial of terraced fields. Each carries a bracketed mono label top-left, a lime circular arrow button top-right and a two-line white title over the image at bottom-left."
+    },
+    {
+     "role": "footer",
+     "description": "A blurred dark foliage photograph as background. The wordmark in pale lime spans the full width, letters about 330px tall and touching both margins. Then a hairline, office cities in lime at about 36px on the left and four columns of mono uppercase links on the right; a thin legal row with a back-to-top link at the very bottom."
+    }
+   ],
+   "steal": [
+    "Overlay hairline reticles and mono data tags on an organic 3D object so that measurement becomes the visual subject.",
+    "Dock text in the corners of a full-viewport scene (headline top-left, statement bottom-left, hint bottom-right) and let the object own the centre.",
+    "Confine one pale accent colour to small squares and tags, then spend it once at full scale on a footer wordmark."
+   ]
+  }
+ ]
+}
