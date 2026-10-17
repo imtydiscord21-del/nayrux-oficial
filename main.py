@@ -176,7 +176,7 @@ class AntiNukeBot(commands.Bot):
         rotation = self._status_index % 3
         self._status_index += 1
         if rotation == 0:
-            activity = discord.CustomActivity(name="/zaay", emoji="📎")
+            activity = discord.CustomActivity(name="📎/zayy")
         elif rotation == 1:
             guilds = sorted(self.guilds, key=lambda guild: guild.id)
             if guilds:
