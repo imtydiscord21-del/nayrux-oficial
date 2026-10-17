@@ -153,13 +153,14 @@ class Music(commands.Cog):
             is_playlist = isinstance(results, wavelink.Playlist)
         else:
             tracks = []
-            for prefix in ("ytsearch:", "ytmsearch:"):
+            sources = (wavelink.TrackSource.YouTube, wavelink.TrackSource.YouTubeMusic)
+            for source in sources:
                 try:
-                    found = await wavelink.Playable.search(f"{prefix}{query}")
+                    found = await wavelink.Playable.search(query, source=source)
                     if found and not isinstance(found, wavelink.Playlist):
                         tracks.extend(found)
                 except Exception:
-                    log.warning("Falló la búsqueda %s", prefix, exc_info=True)
+                    log.warning("Falló la búsqueda en %s", source.value, exc_info=True)
             unique_tracks = {}
             for track in tracks:
                 unique_tracks.setdefault(track.identifier, track)
@@ -387,7 +388,10 @@ class Music(commands.Cog):
                     if not query:
                         continue
                     try:
-                        results = await wavelink.Playable.search(f"scsearch:{query}")
+                        results = await wavelink.Playable.search(
+                            query,
+                            source=wavelink.TrackSource.SoundCloud,
+                        )
                         alternatives = list(results.tracks) if isinstance(results, wavelink.Playlist) else list(results or [])
                     except Exception:
                         log.warning("Falló la búsqueda alternativa en SoundCloud (%s)", query, exc_info=True)
