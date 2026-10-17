@@ -34,6 +34,7 @@ plugins:
     allowDirectPlaylistIds: true
     oauth:
       enabled: true
+      refreshToken: "${YOUTUBE_REFRESH_TOKEN}"
     clients:
       - MUSIC
       - ANDROID_MUSIC
