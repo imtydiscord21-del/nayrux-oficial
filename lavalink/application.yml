@@ -33,9 +33,11 @@ plugins:
     allowSearch: true
     clients:
       - MUSIC
-      - TV
+      - ANDROID_MUSIC
+      - WEBEMBEDDED
       - ANDROID_VR
       - WEB
+      - TV
     oauth:
       enabled: true
       refreshToken: "${YOUTUBE_REFRESH_TOKEN}"
