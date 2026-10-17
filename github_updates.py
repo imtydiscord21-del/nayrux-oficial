@@ -1,0 +1,351 @@
+"""
+github_updates.py — Anuncia en un canal de Discord cada actualización que subas a GitHub.
+
+Cuando haces push al repo, GitHub avisa al bot (webhook) y el bot publica un mensaje con:
+  - lo que escribiste en el commit (tu "resumen" y "descripción"),
+  - los archivos NUEVOS, MODIFICADOS y ELIMINADOS (con una etiqueta legible si el archivo la tiene),
+  - un enlace para ver los cambios en GitHub.
+
+Comandos (solo el dueño del bot):
+  ,updates channel (#canal)   — servidor y canal donde se anuncian las actualizaciones
+  ,updates status             — configuración actual y si el servidor de avisos está activo
+  ,updates test               — manda un anuncio de prueba
+  ,updates off                — deja de anunciar
+
+Configuración (variables de Railway):
+  GITHUB_WEBHOOK_SECRET   (obligatoria) una clave larga inventada por ti; la misma va en GitHub.
+                          Sin ella el servidor de avisos NO se enciende.
+  GITHUB_UPDATES_BRANCH   rama a anunciar (por defecto "main")
+  UPDATES_CHANNEL_ID      canal por defecto si no usas ,updates channel
+  PORT                    lo pone Railway solo
+
+En GitHub:  repo → Settings → Webhooks → Add webhook
+  Payload URL   https://TU-DOMINIO-DE-RAILWAY/github
+  Content type  application/json
+  Secret        la misma de GITHUB_WEBHOOK_SECRET
+  Events        "Just the push event"
+"""
+
+import asyncio
+import hashlib
+import hmac
+import json
+import logging
+import os
+import re
+import time
+
+import discord
+from aiohttp import web
+from discord.ext import commands
+
+from config import db
+from ui import success, error
+
+log = logging.getLogger("antinuke.github_updates")
+
+SECRET = os.getenv("GITHUB_WEBHOOK_SECRET") or ""
+BRANCH = os.getenv("GITHUB_UPDATES_BRANCH", "main")
+STATE_KEY = "github_updates"
+
+try:
+    PORT = int(os.getenv("PORT", "8080"))
+except ValueError:
+    PORT = 8080
+
+MAX_BODY_BYTES = 5 * 1024 * 1024
+MAX_COMMITS_SHOWN = 6
+MAX_FILES_SHOWN = 15
+COLOR = 0x2B2D31
+
+# Etiquetas legibles para que el anuncio se entienda sin saber de archivos.
+FILE_LABELS = {
+    "main.py": "Núcleo del bot",
+    "help.py": "Menú de ayuda (`.help`)",
+    "cmd_help.py": "Fichas de ayuda de los comandos",
+    "ui.py": "Respuestas estándar del bot",
+    "emojis.py": "Emojis del bot",
+    "emoji_setup.py": "Revisión de emojis (`.emojicheck`)",
+    "config.py": "Base de datos",
+    "webhook_utils.py": "Envío de mensajes por webhook",
+    "welcome.py": "Bienvenidas (`.welcome`)",
+    "wlc.py": "Bienvenida (`.wlc`)",
+    "boost.py": "Mensajes de boost (`.boost`)",
+    "boostmsg.py": "Mensajes de boost (`.boostmsg`)",
+    "afk.py": "AFK (`.afk`)",
+    "fakepermissions.py": "Permisos falsos (`.fakepermissions`)",
+    "instagram.py": "Instagram (`.instagram`)",
+    "saved_embeds.py": "Embeds guardados (`.embed`)",
+    "info_extra.py": "Más comandos de información",
+    "vanity_sniper.py": "Reclamar vanity (`.vanityclaim`)",
+    "voice.py": "VoiceMaster",
+    "moderation.py": "Moderación",
+    "antinuke.py": "Antinuke",
+    "whitelist.py": "Whitelist",
+    "backup.py": "Respaldos",
+    "snipe.py": "Snipe (`.s`)",
+    "premium.py": "Premium",
+    "ia_chat.py": "Chat con IA",
+    "github_updates.py": "Anuncios de actualizaciones",
+}
+
+# Mensajes que GitHub escribe solo al subir archivos desde la web; no aportan nada al anuncio.
+AUTO_MESSAGE_RE = re.compile(
+    r"^(?:(?:Create|Update|Delete|Rename)\s+[\w./ -]*?[\w-]+\.\w+|Add files via upload)$", re.IGNORECASE
+)
+
+
+# ── Lógica pura (se prueba sin red ni Discord) ───────────────────────────────
+
+def verify_signature(secret: str, body: bytes, header) -> bool:
+    """Comprueba la firma X-Hub-Signature-256 que GitHub pone con tu clave secreta."""
+    if not secret or not header or not header.startswith("sha256="):
+        return False
+    expected = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, header)
+
+
+def _is_auto_message(message: str) -> bool:
+    """True para los mensajes que GitHub escribe solo ('Create x.py', 'Update y.py', 'Add files via upload')."""
+    first, _, rest = message.strip().partition("\n")
+    return not rest.strip() and bool(AUTO_MESSAGE_RE.match(first.strip()))
+
+
+def summarize_push(payload: dict) -> dict:
+    """Resume un evento push: mensajes de commit y archivos nuevos/modificados/eliminados (neto)."""
+    status: dict = {}
+    notes = []
+    commits = payload.get("commits") or []
+    for commit in commits:                       # GitHub los manda del más viejo al más nuevo
+        for path in commit.get("added") or []:
+            status[path] = "modified" if status.get(path) == "removed" else (status.get(path) or "added")
+        for path in commit.get("modified") or []:
+            if status.get(path) != "added":
+                status[path] = "modified"
+        for path in commit.get("removed") or []:
+            if status.get(path) == "added":
+                status.pop(path)                 # se creó y se borró en el mismo push: no cuenta
+            else:
+                status[path] = "removed"
+
+        message = (commit.get("message") or "").strip()
+        if message and not _is_auto_message(message):
+            first, _, body = message.partition("\n")
+            author = (commit.get("author") or {}).get("name") or ""
+            notes.append({"title": first.strip(), "body": body.strip(), "author": author})
+
+    return {
+        "repo": (payload.get("repository") or {}).get("full_name", ""),
+        "branch": (payload.get("ref") or "").replace("refs/heads/", ""),
+        "pusher": (payload.get("pusher") or {}).get("name", ""),
+        "compare": payload.get("compare") or "",
+        "commit_count": len(commits),
+        "notes": notes,
+        "added": sorted(p for p, s in status.items() if s == "added"),
+        "modified": sorted(p for p, s in status.items() if s == "modified"),
+        "removed": sorted(p for p, s in status.items() if s == "removed"),
+    }
+
+
+def _file_line(path: str) -> str:
+    label = FILE_LABELS.get(path.split("/")[-1]) if "/" not in path else None
+    return f"> • `{path}` — {label}" if label else f"> • `{path}`"
+
+
+def _file_block(title: str, paths: list) -> str:
+    if not paths:
+        return ""
+    lines = [_file_line(p) for p in paths[:MAX_FILES_SHOWN]]
+    if len(paths) > MAX_FILES_SHOWN:
+        lines.append(f"> …y {len(paths) - MAX_FILES_SHOWN} más")
+    return f"**{title}**\n" + "\n".join(lines)
+
+
+def build_announcement(summary: dict) -> discord.Embed:
+    blocks = ["**🔧 Actualización del bot**"]
+
+    if summary["notes"]:
+        lines = []
+        for note in summary["notes"][:MAX_COMMITS_SHOWN]:
+            lines.append(f"> • **{note['title']}**" + (f" — {note['author']}" if note["author"] else ""))
+            if note["body"]:
+                body = note["body"].replace("\n", " ")
+                lines.append(f"> {body[:220]}{'…' if len(body) > 220 else ''}")
+        if len(summary["notes"]) > MAX_COMMITS_SHOWN:
+            lines.append(f"> …y {len(summary['notes']) - MAX_COMMITS_SHOWN} cambios más")
+        blocks.append("\n".join(lines))
+
+    for title, key in (("➕ Nuevo", "added"), ("✏️ Modificado", "modified"), ("🗑️ Eliminado", "removed")):
+        block = _file_block(title, summary[key])
+        if block:
+            blocks.append(block)
+
+    if len(blocks) == 1:
+        blocks.append("> Se actualizaron archivos del bot.")
+    if summary["compare"]:
+        blocks.append(f"[Ver los cambios en GitHub]({summary['compare']})")
+
+    embed = discord.Embed(description="\n\n".join(blocks)[:4000], color=COLOR)
+    footer = " · ".join(x for x in (summary["repo"], summary["branch"]) if x)
+    if footer:
+        footer += f" · {summary['commit_count']} commit(s)" if summary["commit_count"] else ""
+        embed.set_footer(text=footer)
+    embed.timestamp = discord.utils.utcnow()
+    return embed
+
+
+SAMPLE_PAYLOAD = {
+    "ref": "refs/heads/main",
+    "repository": {"full_name": "tu-usuario/tu-repo"},
+    "pusher": {"name": "tú"},
+    "compare": "",
+    "commits": [{
+        "message": "Prueba del anuncio\nAsí se ve un cambio con su descripción.",
+        "author": {"name": "tú"},
+        "added": ["wlc.py"], "modified": ["help.py", "main.py"], "removed": [],
+    }],
+}
+
+
+# ── Cog ──────────────────────────────────────────────────────────────────────
+
+class GithubUpdates(commands.Cog):
+    def __init__(self, bot: commands.Bot):
+        self.bot = bot
+        self.runner = None
+        self.deliveries: list = []          # ids de entregas ya procesadas (GitHub reintenta si tarda)
+        self.last_event = None
+
+    async def cog_load(self):
+        if not SECRET:
+            log.warning("GITHUB_WEBHOOK_SECRET no está configurada: el servidor de avisos de GitHub NO se enciende")
+            return
+        app = web.Application(client_max_size=MAX_BODY_BYTES)
+        app.router.add_get("/", self.health)
+        app.router.add_post("/github", self.handle_github)
+        self.runner = web.AppRunner(app)
+        await self.runner.setup()
+        await web.TCPSite(self.runner, "0.0.0.0", PORT).start()
+        log.info(f"Servidor de avisos de GitHub escuchando en el puerto {PORT} (rama '{BRANCH}')")
+
+    async def cog_unload(self):
+        if self.runner is not None:
+            await self.runner.cleanup()
+            self.runner = None
+
+    # ── Servidor web ─────────────────────────────────────────────────────────
+
+    async def health(self, request):
+        return web.Response(text="ok")
+
+    async def handle_github(self, request):
+        body = await request.read()
+        if not verify_signature(SECRET, body, request.headers.get("X-Hub-Signature-256")):
+            return web.Response(status=401, text="firma inválida")
+
+        event = request.headers.get("X-GitHub-Event", "")
+        if event == "ping":
+            return web.Response(text="pong")
+        if event != "push":
+            return web.Response(status=202, text="ignorado")
+
+        delivery = request.headers.get("X-GitHub-Delivery")
+        if delivery and delivery in self.deliveries:
+            return web.Response(text="repetido")
+        if delivery:
+            self.deliveries = (self.deliveries + [delivery])[-50:]
+
+        try:
+            payload = json.loads(body)
+        except ValueError:
+            return web.Response(status=400, text="JSON inválido")
+
+        asyncio.create_task(self.process_push(payload))   # se responde rápido a GitHub
+        return web.Response(status=202, text="ok")
+
+    # ── Anuncio ──────────────────────────────────────────────────────────────
+
+    def _target(self):
+        state = db.get(STATE_KEY, None) or {}
+        if state.get("enabled") is False:
+            return None
+        channel_id = state.get("channel_id") or os.getenv("UPDATES_CHANNEL_ID")
+        try:
+            return int(channel_id) if channel_id else None
+        except (TypeError, ValueError):
+            return None
+
+    async def process_push(self, payload: dict):
+        try:
+            self.last_event = time.time()
+            if payload.get("deleted") or payload.get("ref") != f"refs/heads/{BRANCH}":
+                return
+            summary = summarize_push(payload)
+            if not summary["commit_count"]:
+                return
+            await self.announce(summary)
+        except Exception:
+            log.exception("Falló el anuncio de la actualización")
+
+    async def announce(self, summary: dict) -> bool:
+        channel_id = await asyncio.to_thread(self._target)
+        if channel_id is None:
+            log.warning("Llegó una actualización de GitHub pero no hay canal configurado (usa ,updates channel)")
+            return False
+        channel = self.bot.get_channel(channel_id)
+        if channel is None:
+            try:
+                channel = await self.bot.fetch_channel(channel_id)
+            except discord.HTTPException:
+                log.warning(f"No pude encontrar el canal de actualizaciones {channel_id}")
+                return False
+        try:
+            await channel.send(embed=build_announcement(summary), allowed_mentions=discord.AllowedMentions.none())
+            return True
+        except discord.HTTPException:
+            log.warning("No pude escribir en el canal de actualizaciones (¿permisos?)")
+            return False
+
+    # ── Comandos ─────────────────────────────────────────────────────────────
+
+    @commands.group(name="updates", invoke_without_command=True)
+    @commands.is_owner()
+    async def updates(self, ctx: commands.Context):
+        from cmd_help import build_command_card
+        await ctx.send(embed=build_command_card(ctx))
+
+    @updates.command(name="channel")
+    async def updates_channel(self, ctx: commands.Context, channel: discord.TextChannel):
+        db.set(STATE_KEY, {"guild_id": channel.guild.id, "channel_id": channel.id, "enabled": True})
+        await success(ctx, f"Anunciaré las actualizaciones del bot en {channel.mention} ({channel.guild.name}).")
+
+    @updates.command(name="off")
+    async def updates_off(self, ctx: commands.Context):
+        state = db.get(STATE_KEY, None) or {}
+        state["enabled"] = False
+        db.set(STATE_KEY, state)
+        await success(ctx, "Dejé de anunciar las actualizaciones. Usa `updates channel` para volver a activarlas.")
+
+    @updates.command(name="status")
+    async def updates_status(self, ctx: commands.Context):
+        channel_id = self._target()
+        channel = self.bot.get_channel(channel_id) if channel_id else None
+        lines = [
+            f"**Canal:** {channel.mention if channel else ('`' + str(channel_id) + '` (no lo encuentro)' if channel_id else 'sin configurar')}",
+            f"**Rama:** `{BRANCH}`",
+            f"**Clave secreta (`GITHUB_WEBHOOK_SECRET`):** {'configurada' if SECRET else 'FALTA — el servidor de avisos está apagado'}",
+            f"**Servidor de avisos:** {'activo en el puerto ' + str(PORT) if self.runner else 'apagado'}",
+            "**Último aviso de GitHub:** " + (f"<t:{int(self.last_event)}:R>" if self.last_event else "ninguno desde que arrancó el bot"),
+        ]
+        await ctx.send(embed=discord.Embed(title="Anuncios de actualizaciones", description="\n".join(lines), color=COLOR))
+
+    @updates.command(name="test")
+    async def updates_test(self, ctx: commands.Context):
+        if await self.announce(summarize_push(SAMPLE_PAYLOAD)):
+            await success(ctx, "Mandé un anuncio de prueba al canal configurado.")
+        else:
+            await error(ctx, "No pude mandarlo. Configura el canal con `updates channel` y revisa que tenga permisos de escritura.")
+
+
+async def setup(bot: commands.Bot):
+    await bot.add_cog(GithubUpdates(bot))
