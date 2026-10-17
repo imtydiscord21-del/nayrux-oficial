@@ -36,7 +36,7 @@ import re
 import time
 
 import discord
-from aiohttp import web
+from aiohttp import ClientError, ClientSession, ClientTimeout, web
 from discord.ext import commands
 
 from config import db
@@ -55,8 +55,13 @@ except ValueError:
 
 MAX_BODY_BYTES = 5 * 1024 * 1024
 MAX_COMMITS_SHOWN = 6
-MAX_FILES_SHOWN = 15
 COLOR = 0x2B2D31
+COMMAND_DECORATOR_RE = re.compile(
+    r"@(?P<decorator>[\w.]*?(?:hybrid_command|hybrid_group|command|group))"
+    r"[ \t]*(?:\((?P<args>[^)]*)\))?[ \t]*(?:\n[ \t]*@[^\n]+)*"
+    r"(?:\n[ \t]*(?:async[ \t]+)?def[ \t]+(?P<function>[A-Za-z_]\w*))?",
+    re.MULTILINE | re.DOTALL,
+)
 
 _COMMIT_KIND_RE = re.compile(
     r"^\s*(feat(?:ure)?|fix|bugfix|perf(?:ormance)?|refactor|docs?|chore|security|style|test)(?:\([^)]*\))?!?:\s*",
@@ -154,24 +159,72 @@ def summarize_push(payload: dict) -> dict:
         "compare": payload.get("compare") or "",
         "commit_count": len(commits),
         "notes": notes,
+        "commands_added": [],
+        "commands_removed": [],
+        "commands_updated": [],
         "added": sorted(p for p, s in status.items() if s == "added"),
         "modified": sorted(p for p, s in status.items() if s == "modified"),
         "removed": sorted(p for p, s in status.items() if s == "removed"),
     }
 
 
-def _file_line(path: str) -> str:
-    label = FILE_LABELS.get(path.split("/")[-1]) if "/" not in path else None
-    return f"> • `{path}` — {label}" if label else f"> • `{path}`"
+def _commands_from_patch(patch: str, marker: str) -> list[dict]:
+    lines = [line[1:] for line in patch.splitlines() if line.startswith(marker) and not line.startswith(marker * 3)]
+    code = "\n".join(lines)
+    commands = []
+    for match in COMMAND_DECORATOR_RE.finditer(code):
+        args = match.group("args") or ""
+        name = re.search(r"\bname\s*=\s*['\"]([^'\"]+)['\"]", args)
+        command = name.group(1) if name else match.group("function")
+        if not command:
+            continue
+        decorator = match.group("decorator")
+        commands.append({
+            "name": command,
+            "kind": "slash" if "app_commands" in decorator else ("hybrid" if "hybrid_" in decorator else "prefix"),
+        })
+    return commands
 
 
-def _file_block(title: str, paths: list) -> str:
-    if not paths:
-        return ""
-    lines = [_file_line(p) for p in paths[:MAX_FILES_SHOWN]]
-    if len(paths) > MAX_FILES_SHOWN:
-        lines.append(f"> …y {len(paths) - MAX_FILES_SHOWN} más")
-    return f"**{title}**\n" + "\n".join(lines)
+def _commands_from_files(files: list[dict]) -> tuple[list[dict], list[dict], list[dict]]:
+    added, removed = {}, {}
+    for file in files:
+        path = file.get("filename", "")
+        label = FILE_LABELS.get(path.rsplit("/", 1)[-1])
+        for marker, target in (("+", added), ("-", removed)):
+            for command in _commands_from_patch(file.get("patch") or "", marker):
+                command["area"] = label
+                target[(command["kind"], command["name"])] = command
+    updated = {key: added.pop(key) for key in added.keys() & removed.keys()}
+    for key in updated:
+        removed.pop(key)
+    sort = lambda commands: sorted(commands.values(), key=lambda command: command["name"])
+    return sort(added), sort(removed), sort(updated)
+
+
+async def _commands_from_github_compare(payload: dict) -> tuple[list[dict], list[dict], list[dict]]:
+    """Lee el diff público del push para detectar comandos en los cambios de Python."""
+    repo = (payload.get("repository") or {}).get("full_name", "")
+    before, after = payload.get("before", ""), payload.get("after", "")
+    if not re.fullmatch(r"[\w.-]+/[\w.-]+", repo) or not all(re.fullmatch(r"[0-9a-f]{40,64}", sha) for sha in (before, after)):
+        return [], [], []
+    if before == "0" * len(before):
+        return [], [], []
+
+    url = f"https://api.github.com/repos/{repo}/compare/{before}...{after}"
+    try:
+        async with ClientSession(timeout=ClientTimeout(total=8)) as session:
+            async with session.get(url, headers={"Accept": "application/vnd.github+json", "User-Agent": "NayruxBot"}) as response:
+                if response.status != 200:
+                    log.warning("GitHub compare respondió %s; anunciaré el resumen del commit sin detectar comandos", response.status)
+                    return [], [], []
+                comparison = await response.json()
+    except (ClientError, asyncio.TimeoutError, ValueError):
+        log.warning("No pude leer el diff de GitHub para detectar comandos", exc_info=True)
+        return [], [], []
+
+    files = [file for file in comparison.get("files", []) if file.get("filename", "").endswith(".py")]
+    return _commands_from_files(files)
 
 
 def _change_line(note: dict) -> str:
@@ -188,8 +241,26 @@ def _change_line(note: dict) -> str:
     return f"• {heading}" + (f"\n  {body}" if body else "")
 
 
+def _command_line(command: dict) -> str:
+    name = command["name"]
+    if command["kind"] == "slash":
+        shown = f"/{name}"
+    elif command["kind"] == "hybrid":
+        shown = f"`,{name}` y `/{name}`"
+    else:
+        shown = f"`,{name}`"
+    return f"• {shown}" + (f" — {command['area']}" if command.get("area") else "")
+
+
 def build_announcement(summary: dict) -> discord.Embed:
     blocks = []
+
+    if summary.get("commands_added"):
+        blocks.append("**🆕 Se agregaron comandos**\n" + "\n".join(_command_line(command) for command in summary["commands_added"]))
+    if summary.get("commands_removed"):
+        blocks.append("**🗑️ Se retiraron comandos**\n" + "\n".join(_command_line(command) for command in summary["commands_removed"]))
+    if summary.get("commands_updated"):
+        blocks.append("**✏️ Se modificaron comandos**\n" + "\n".join(_command_line(command) for command in summary["commands_updated"]))
 
     if summary["notes"]:
         lines = [_change_line(note) for note in summary["notes"][:MAX_COMMITS_SHOWN]]
@@ -197,23 +268,13 @@ def build_announcement(summary: dict) -> discord.Embed:
             lines.append(f"• Y {len(summary['notes']) - MAX_COMMITS_SHOWN} cambios más")
         blocks.append("**Qué se hizo**\n" + "\n".join(lines))
 
-    file_blocks = [
-        block for title, key in (("➕ Nuevo", "added"), ("✏️ Modificado", "modified"), ("🗑️ Eliminado", "removed"))
-        if (block := _file_block(title, summary[key]))
-    ]
-    if file_blocks:
-        blocks.append("**Archivos implicados**\n" + "\n".join(file_blocks))
-
     if not blocks:
-        blocks.append("Se publicaron cambios en el bot.")
+        areas = sorted({FILE_LABELS.get(path.rsplit("/", 1)[-1], path.rsplit("/", 1)[-1]) for path in summary["added"] + summary["modified"] + summary["removed"]})
+        blocks.append("**Áreas actualizadas**\n" + "\n".join(f"• {area}" for area in areas) if areas else "Se publicaron cambios en el bot.")
     if summary["compare"]:
         blocks.append(f"[Ver los cambios en GitHub]({summary['compare']})")
 
     embed = discord.Embed(title="🔧 Actualización del bot", description="\n\n".join(blocks)[:4000], color=COLOR)
-    footer = " · ".join(x for x in (summary["repo"], summary["branch"]) if x)
-    if footer:
-        footer += f" · {summary['commit_count']} commit(s)" if summary["commit_count"] else ""
-        embed.set_footer(text=footer)
     embed.timestamp = discord.utils.utcnow()
     return embed
 
@@ -224,7 +285,7 @@ SAMPLE_PAYLOAD = {
     "pusher": {"name": "tú"},
     "compare": "",
     "commits": [{
-        "message": "Prueba del anuncio\nAsí se ve un cambio con su descripción.",
+        "message": "feat: agrega el comando ,wlc\nPermite configurar el canal y el mensaje de bienvenida desde Discord.",
         "author": {"name": "tú"},
         "added": ["wlc.py"], "modified": ["help.py", "main.py"], "removed": [],
     }],
@@ -307,6 +368,7 @@ class GithubUpdates(commands.Cog):
             summary = summarize_push(payload)
             if not summary["commit_count"]:
                 return
+            summary["commands_added"], summary["commands_removed"], summary["commands_updated"] = await _commands_from_github_compare(payload)
             await self.announce(summary)
         except Exception:
             log.exception("Falló el anuncio de la actualización")
@@ -365,7 +427,9 @@ class GithubUpdates(commands.Cog):
 
     @updates.command(name="test")
     async def updates_test(self, ctx: commands.Context):
-        if await self.announce(summarize_push(SAMPLE_PAYLOAD)):
+        summary = summarize_push(SAMPLE_PAYLOAD)
+        summary["commands_added"] = [{"name": "wlc", "kind": "prefix", "area": "Bienvenidas"}]
+        if await self.announce(summary):
             await success(ctx, "Mandé un anuncio de prueba al canal configurado.")
         else:
             await error(ctx, "No pude mandarlo. Configura el canal con `updates channel` y revisa que tenga permisos de escritura.")
@@ -373,3 +437,4 @@ class GithubUpdates(commands.Cog):
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(GithubUpdates(bot))
+
