@@ -32,6 +32,7 @@ import hmac
 import json
 import logging
 import os
+from pathlib import Path
 import re
 import time
 
@@ -47,6 +48,7 @@ log = logging.getLogger("antinuke.github_updates")
 SECRET = os.getenv("GITHUB_WEBHOOK_SECRET") or ""
 BRANCH = os.getenv("GITHUB_UPDATES_BRANCH", "main")
 STATE_KEY = "github_updates"
+WEBSITE_DIR = Path(__file__).resolve().parent / "website"
 
 try:
     PORT = int(os.getenv("PORT", "8080"))
@@ -298,20 +300,24 @@ class GithubUpdates(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.runner = None
+        self.started_at = time.monotonic()
         self.deliveries: list = []          # ids de entregas ya procesadas (GitHub reintenta si tarda)
         self.last_event = None
 
     async def cog_load(self):
-        if not SECRET:
-            log.warning("GITHUB_WEBHOOK_SECRET no está configurada: el servidor de avisos de GitHub NO se enciende")
-            return
         app = web.Application(client_max_size=MAX_BODY_BYTES)
-        app.router.add_get("/", self.health)
-        app.router.add_post("/github", self.handle_github)
+        app.router.add_get("/", self.website)
+        app.router.add_get("/health", self.health)
+        app.router.add_get("/api/status", self.public_status)
+        app.router.add_get("/api/commands", self.public_commands)
+        if SECRET:
+            app.router.add_post("/github", self.handle_github)
+        else:
+            log.warning("GITHUB_WEBHOOK_SECRET no está configurada: webhook de GitHub apagado; la web seguirá disponible")
         self.runner = web.AppRunner(app)
         await self.runner.setup()
         await web.TCPSite(self.runner, "0.0.0.0", PORT).start()
-        log.info(f"Servidor de avisos de GitHub escuchando en el puerto {PORT} (rama '{BRANCH}')")
+        log.info(f"Web y API escuchando en el puerto {PORT}" + (f"; webhook de GitHub activo para '{BRANCH}'" if SECRET else ""))
 
     async def cog_unload(self):
         if self.runner is not None:
@@ -322,6 +328,36 @@ class GithubUpdates(commands.Cog):
 
     async def health(self, request):
         return web.Response(text="ok")
+
+    async def website(self, request):
+        return web.FileResponse(WEBSITE_DIR / "index.html")
+
+    async def public_status(self, request):
+        user = self.bot.user
+        ready = self.bot.is_ready() and user is not None
+        payload = {
+            "online": ready,
+            "name": user.name if user else "Nayrux",
+            "avatar": user.display_avatar.url if user else None,
+            "guilds": len(self.bot.guilds) if ready else 0,
+            "members": sum(guild.member_count or 0 for guild in self.bot.guilds) if ready else 0,
+            "latency_ms": round(self.bot.latency * 1000) if ready else None,
+            "uptime_seconds": int(time.monotonic() - self.started_at),
+            "checked_at": int(time.time()),
+        }
+        return web.json_response(payload, headers={"Cache-Control": "no-store"})
+
+    async def public_commands(self, request):
+        from help import CATEGORIES, HIDDEN_CATEGORIES
+
+        categories = []
+        for key, data in CATEGORIES.items():
+            if key in HIDDEN_CATEGORIES:
+                continue
+            sections = [{"title": title, "commands": commands, "note": note}
+                        for title, commands, note in data["sections"]]
+            categories.append({"id": key, "name": data["label"], "description": data["description"], "sections": sections})
+        return web.json_response({"prefix": ",", "categories": categories}, headers={"Cache-Control": "no-store"})
 
     async def handle_github(self, request):
         body = await request.read()
@@ -437,4 +473,5 @@ class GithubUpdates(commands.Cog):
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(GithubUpdates(bot))
+
 
