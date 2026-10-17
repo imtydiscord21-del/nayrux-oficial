@@ -74,7 +74,7 @@ class Music(commands.Cog):
         self._handling_failures: set[int] = set()
 
     async def _edit_feedback(self, track: wavelink.Playable, embed: discord.Embed) -> bool:
-        extras = track.extras
+        extras = dict(track.extras)
         channel_id = extras.get("feedback_channel_id")
         message_id = extras.get("feedback_message_id")
         if not channel_id or not message_id:
@@ -160,7 +160,11 @@ class Music(commands.Cog):
 
         if not player.playing and not player.paused and player.queue.is_empty:
             track = tracks.pop(0)
-            track.extras.update({"feedback_channel_id": ctx.channel.id, "feedback_message_id": msg.id})
+            track.extras = {
+                **dict(track.extras),
+                "feedback_channel_id": ctx.channel.id,
+                "feedback_message_id": msg.id,
+            }
             await player.play(track)
             if tracks:
                 await player.queue.put_wait(tracks)
@@ -319,7 +323,7 @@ class Music(commands.Cog):
         self._handling_failures.add(guild_id)
         try:
             log.warning("Lavalink no pudo reproducir %s (%s): %s", track.title, track.source, payload.exception)
-            extras = track.extras
+            extras = dict(track.extras)
             tried_fallback = extras.get("soundcloud_fallback", False)
 
             if track.source == "youtube" and not tried_fallback:
