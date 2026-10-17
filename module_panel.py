@@ -50,12 +50,27 @@ def _get_module_config(config: dict, module_key: str) -> dict:
 
 
 def _save_module_config(guild_id: int, module_key: str, **updates):
-    config = db.get_guild(guild_id)
-    config.setdefault("module_settings", {})
-    config["module_settings"].setdefault(module_key, {})
-    config["module_settings"][module_key].update(updates)
-    db.update_guild(guild_id, config)
+    for key, value in updates.items():
+        db.set_guild_field(guild_id, f"module_settings.{module_key}.{key}", value)
     _invalidate_cache(guild_id)
+
+
+async def _require_manager(interaction: discord.Interaction, bot: discord.Client) -> bool:
+    guild, user = interaction.guild, interaction.user
+    if guild is None or not isinstance(user, discord.Member):
+        allowed = False
+    elif user.id == guild.owner_id or user.guild_permissions.administrator:
+        allowed = True
+    else:
+        allowed = await bot.is_owner(user)
+        if not allowed:
+            allowed = user.id in db.get_guild(guild.id).get("antinuke_admins", [])
+    if not allowed:
+        await interaction.response.send_message(
+            "Solo el dueño, un administrador o un AntiNuke Admin puede cambiar esta configuración.",
+            ephemeral=True,
+        )
+    return allowed
 
 
 # ── Embeds ──────────────────────────────────────────────────────────────────
@@ -68,24 +83,25 @@ def build_module_embed(bot: discord.Client, guild: discord.Guild, module_key: st
 
     enabled = an.get("enabled", False) and an.get(toggle_key, True)
     punishment = mod_cfg.get("punishment") or an.get("punishment", "ban")
-    is_override = "punishment" in mod_cfg
+    is_override = bool(mod_cfg.get("punishment"))
     log_channel_id = mod_cfg.get("log_channel")
-    log_text = f"<#{log_channel_id}>" if log_channel_id else "Sin configurar (usa el canal global)"
+    log_channel = guild.get_channel(int(log_channel_id)) if log_channel_id else None
+    log_text = f"<#{log_channel.id}>" if log_channel else "Usa el canal global"
     wl = mod_cfg.get("whitelist", {})
     wl_count = len(wl.get("users", [])) + len(wl.get("roles", []))
 
     lines = [
-        f"**Status:** {'Enabled' if enabled else 'Disabled'}",
-        f"**Punishment:** `{punishment}`" + (" *(propio)*" if is_override else " *(global)*"),
-        f"**Logs:** {log_text}",
-        f"**Whitelisted:** {wl_count} entradas",
+        f"**Estado efectivo:** {'Activado' if enabled else 'Desactivado'}",
+        f"**Castigo:** `{punishment}`" + (" *(propio)*" if is_override else " *(global)*"),
+        f"**Canal de registros:** {log_text}",
+        f"**Excepciones:** {wl_count} usuarios o roles",
     ]
     if threshold_key:
-        lines.append(f"**Threshold:** {an.get(threshold_key, 3)} en {an.get(window_key, 10)}s")
+        lines.append(f"**Límite:** {an.get(threshold_key, 3)} acciones en {an.get(window_key, 10)} s")
 
     e = discord.Embed(title=MODULE_LABELS.get(module_key, module_key), description="\n".join(lines), color=0x2b2d31)
     e.set_author(name=f"{bot.user.name}", icon_url=bot.user.display_avatar.url)
-    e.set_footer(text="Usa el menú desplegable para configurar")
+    e.set_footer(text="Los ajustes propios de este módulo tienen prioridad sobre los globales.")
     return e
 
 
@@ -95,55 +111,61 @@ def build_whitelist_embed(module_key: str, guild: discord.Guild) -> discord.Embe
     users = wl.get("users", [])
     roles = wl.get("roles", [])
 
-    user_text = "\n".join(f"<@{u}>" for u in users) or "None"
-    role_text = "\n".join(f"<@&{r}>" for r in roles) or "None"
+    user_text = "\n".join(f"<@{u}>" for u in users) or "Ninguno"
+    role_text = "\n".join(f"<@&{r}>" for r in roles) or "Ninguno"
 
     e = discord.Embed(
-        title="Whitelist Management",
-        description=f"Manage whitelisted users and roles for **{MODULE_LABELS.get(module_key, module_key)}**",
+        title="Excepciones del módulo",
+        description=f"Usuarios y roles que quedan fuera de **{MODULE_LABELS.get(module_key, module_key)}**.",
         color=0x2b2d31,
     )
-    e.add_field(name=f"Users ({len(users)})", value=user_text[:1024], inline=False)
+    e.add_field(name=f"Usuarios ({len(users)})", value=user_text[:1024], inline=False)
     e.add_field(name=f"Roles ({len(roles)})", value=role_text[:1024], inline=False)
-    e.set_footer(text="Use the buttons below to manage whitelist entries")
+    e.set_footer(text="Estas excepciones solo aplican a este módulo.")
     return e
 
 
 # ── Modales ─────────────────────────────────────────────────────────────────
 
-class PunishmentModal(discord.ui.Modal, title="Configure Punishment"):
+class PunishmentModal(discord.ui.Modal, title="Configurar castigo"):
     def __init__(self, bot: discord.Client, module_key: str, parent_view: discord.ui.View):
         super().__init__()
         self.bot = bot
         self.module_key = module_key
         self.parent_view = parent_view
         self.value_input = discord.ui.TextInput(
-            label="Punishment Type",
-            placeholder="ban, kick, strip o mute",
+            label="Castigo del módulo",
+            placeholder="ban, kick, strip, mute o global",
             required=True,
             max_length=10,
         )
         self.add_item(self.value_input)
 
     async def on_submit(self, interaction: discord.Interaction):
+        if not await _require_manager(interaction, self.bot):
+            return
         value = self.value_input.value.strip().lower()
+        if value == "global":
+            _save_module_config(interaction.guild.id, self.module_key, punishment=None)
+            embed = build_module_embed(self.bot, interaction.guild, self.module_key)
+            return await interaction.response.edit_message(embed=embed, view=self.parent_view)
         if value not in PUNISHMENT_CHOICES:
             return await interaction.response.send_message(
-                f"Castigo inválido. Usa uno de: {', '.join(PUNISHMENT_CHOICES)}", ephemeral=True
+                f"Castigo inválido. Usa uno de: {', '.join(PUNISHMENT_CHOICES)} o `global`.", ephemeral=True
             )
         _save_module_config(interaction.guild.id, self.module_key, punishment=value)
         embed = build_module_embed(self.bot, interaction.guild, self.module_key)
         await interaction.response.edit_message(embed=embed, view=self.parent_view)
 
 
-class LogsModal(discord.ui.Modal, title="Configure Logs Channel"):
+class LogsModal(discord.ui.Modal, title="Configurar canal de registros"):
     def __init__(self, bot: discord.Client, module_key: str, parent_view: discord.ui.View):
         super().__init__()
         self.bot = bot
         self.module_key = module_key
         self.parent_view = parent_view
         self.value_input = discord.ui.TextInput(
-            label="Channel ID or #mention",
+            label="Canal o mención del canal",
             placeholder="#logs o el ID del canal (vacío = usar el canal global)",
             required=False,
             max_length=100,
@@ -151,6 +173,8 @@ class LogsModal(discord.ui.Modal, title="Configure Logs Channel"):
         self.add_item(self.value_input)
 
     async def on_submit(self, interaction: discord.Interaction):
+        if not await _require_manager(interaction, self.bot):
+            return
         raw = self.value_input.value.strip()
         if not raw:
             _save_module_config(interaction.guild.id, self.module_key, log_channel=None)
@@ -163,48 +187,49 @@ class LogsModal(discord.ui.Modal, title="Configure Logs Channel"):
                 "Canal inválido. Usa un #mention o el ID del canal.", ephemeral=True
             )
         channel = interaction.guild.get_channel(int(channel_id))
-        if channel is None:
-            return await interaction.response.send_message("No encontré ese canal en este servidor.", ephemeral=True)
+        if not isinstance(channel, discord.TextChannel):
+            return await interaction.response.send_message("No encontré ese canal de texto en este servidor.", ephemeral=True)
 
         _save_module_config(interaction.guild.id, self.module_key, log_channel=channel.id)
         embed = build_module_embed(self.bot, interaction.guild, self.module_key)
         await interaction.response.edit_message(embed=embed, view=self.parent_view)
 
 
-class ThresholdModal(discord.ui.Modal, title="Configure Threshold"):
+class ThresholdModal(discord.ui.Modal, title="Configurar límite"):
     def __init__(self, bot: discord.Client, module_key: str, parent_view: discord.ui.View):
         super().__init__()
         self.bot = bot
         self.module_key = module_key
         self.parent_view = parent_view
-        self.threshold_input = discord.ui.TextInput(label="Threshold (cantidad)", placeholder="ej. 3", required=True, max_length=4)
-        self.window_input = discord.ui.TextInput(label="Window (segundos)", placeholder="ej. 10", required=True, max_length=4)
+        self.threshold_input = discord.ui.TextInput(label="Acciones antes de activar", placeholder="ej. 3 (máximo 1000)", required=True, max_length=4)
+        self.window_input = discord.ui.TextInput(label="Ventana de tiempo en segundos", placeholder="ej. 10 (máximo 3600)", required=True, max_length=4)
         self.add_item(self.threshold_input)
         self.add_item(self.window_input)
 
     async def on_submit(self, interaction: discord.Interaction):
+        if not await _require_manager(interaction, self.bot):
+            return
         t_raw = self.threshold_input.value.strip()
         w_raw = self.window_input.value.strip()
         if not (t_raw.isdigit() and w_raw.isdigit()):
-            return await interaction.response.send_message("Threshold y Window deben ser números.", ephemeral=True)
+            return await interaction.response.send_message("El límite y la ventana deben ser números.", ephemeral=True)
 
         threshold, window = int(t_raw), int(w_raw)
-        if threshold < 1 or window < 1:
-            return await interaction.response.send_message("Deben ser mayores a 0.", ephemeral=True)
+        if not 1 <= threshold <= 1000 or not 1 <= window <= 3600:
+            return await interaction.response.send_message(
+                "Usa entre 1 y 1000 acciones, y entre 1 y 3600 segundos.", ephemeral=True
+            )
 
         toggle_key, threshold_key, window_key = MODULES[self.module_key]
-        config = db.get_guild(interaction.guild.id)
-        config.setdefault("antinuke", {})
-        config["antinuke"][threshold_key] = threshold
-        config["antinuke"][window_key] = window
-        db.update_guild(interaction.guild.id, config)
+        db.set_guild_field(interaction.guild.id, f"antinuke.{threshold_key}", threshold)
+        db.set_guild_field(interaction.guild.id, f"antinuke.{window_key}", window)
         _invalidate_cache(interaction.guild.id)
 
         embed = build_module_embed(self.bot, interaction.guild, self.module_key)
         await interaction.response.edit_message(embed=embed, view=self.parent_view)
 
 
-class WhitelistAddModal(discord.ui.Modal, title="Add Whitelist Entry"):
+class WhitelistAddModal(discord.ui.Modal, title="Agregar excepción"):
     def __init__(self, bot: discord.Client, module_key: str):
         super().__init__()
         self.bot = bot
@@ -218,6 +243,8 @@ class WhitelistAddModal(discord.ui.Modal, title="Add Whitelist Entry"):
         self.add_item(self.value_input)
 
     async def on_submit(self, interaction: discord.Interaction):
+        if not await _require_manager(interaction, self.bot):
+            return
         raw_id = "".join(ch for ch in self.value_input.value.strip() if ch.isdigit())
         if not raw_id:
             return await interaction.response.send_message("No pude leer un ID válido ahí.", ephemeral=True)
@@ -226,30 +253,32 @@ class WhitelistAddModal(discord.ui.Modal, title="Add Whitelist Entry"):
         guild = interaction.guild
         role = guild.get_role(entry_id)
         member = guild.get_member(entry_id)
-
-        config = db.get_guild(guild.id)
-        config.setdefault("module_settings", {}).setdefault(self.module_key, {})
-        wl = config["module_settings"][self.module_key].setdefault("whitelist", {"users": [], "roles": []})
+        if role is None and member is None:
+            try:
+                member = await guild.fetch_member(entry_id)
+            except (discord.NotFound, discord.HTTPException):
+                member = None
 
         if member is not None:
-            if entry_id not in wl.setdefault("users", []):
-                wl["users"].append(entry_id)
+            db.add_guild_set_item(
+                guild.id, f"module_settings.{self.module_key}.whitelist.users", entry_id
+            )
         elif role is not None:
-            if entry_id not in wl.setdefault("roles", []):
-                wl["roles"].append(entry_id)
+            db.add_guild_set_item(
+                guild.id, f"module_settings.{self.module_key}.whitelist.roles", entry_id
+            )
         else:
             return await interaction.response.send_message(
                 "No encontré ese usuario ni ese rol en este servidor.", ephemeral=True
             )
 
-        db.update_guild(guild.id, config)
         _invalidate_cache(guild.id)
 
         embed = build_whitelist_embed(self.module_key, guild)
         await interaction.response.edit_message(embed=embed, view=WhitelistView(self.bot, self.module_key))
 
 
-class WhitelistRemoveModal(discord.ui.Modal, title="Remove Whitelist Entry"):
+class WhitelistRemoveModal(discord.ui.Modal, title="Quitar excepción"):
     def __init__(self, bot: discord.Client, module_key: str):
         super().__init__()
         self.bot = bot
@@ -263,28 +292,24 @@ class WhitelistRemoveModal(discord.ui.Modal, title="Remove Whitelist Entry"):
         self.add_item(self.value_input)
 
     async def on_submit(self, interaction: discord.Interaction):
+        if not await _require_manager(interaction, self.bot):
+            return
         raw_id = "".join(ch for ch in self.value_input.value.strip() if ch.isdigit())
         if not raw_id:
             return await interaction.response.send_message("No pude leer un ID válido ahí.", ephemeral=True)
         entry_id = int(raw_id)
 
         guild = interaction.guild
-        config = db.get_guild(guild.id)
-        config.setdefault("module_settings", {}).setdefault(self.module_key, {})
-        wl = config["module_settings"][self.module_key].setdefault("whitelist", {"users": [], "roles": []})
+        removed_user = db.remove_guild_set_item(
+            guild.id, f"module_settings.{self.module_key}.whitelist.users", entry_id
+        )
+        removed_role = db.remove_guild_set_item(
+            guild.id, f"module_settings.{self.module_key}.whitelist.roles", entry_id
+        )
 
-        removed = False
-        if entry_id in wl.get("users", []):
-            wl["users"].remove(entry_id)
-            removed = True
-        if entry_id in wl.get("roles", []):
-            wl["roles"].remove(entry_id)
-            removed = True
-
-        if not removed:
+        if not (removed_user or removed_role):
             return await interaction.response.send_message("Esa entrada no estaba en la whitelist.", ephemeral=True)
 
-        db.update_guild(guild.id, config)
         _invalidate_cache(guild.id)
 
         embed = build_whitelist_embed(self.module_key, guild)
@@ -299,21 +324,29 @@ class WhitelistView(discord.ui.View):
         self.bot = bot
         self.module_key = module_key
 
-    @discord.ui.button(label="Add Entry", style=discord.ButtonStyle.success)
+    @discord.ui.button(label="Agregar excepción", style=discord.ButtonStyle.success)
     async def add_entry(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not await _require_manager(interaction, self.bot):
+            return
         await interaction.response.send_modal(WhitelistAddModal(self.bot, self.module_key))
 
-    @discord.ui.button(label="Remove Entry", style=discord.ButtonStyle.danger)
+    @discord.ui.button(label="Quitar excepción", style=discord.ButtonStyle.danger)
     async def remove_entry(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not await _require_manager(interaction, self.bot):
+            return
         await interaction.response.send_modal(WhitelistRemoveModal(self.bot, self.module_key))
 
-    @discord.ui.button(label="Refresh", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="Actualizar", style=discord.ButtonStyle.secondary)
     async def refresh(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not await _require_manager(interaction, self.bot):
+            return
         embed = build_whitelist_embed(self.module_key, interaction.guild)
         await interaction.response.edit_message(embed=embed, view=self)
 
-    @discord.ui.button(label="Close", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="Cerrar", style=discord.ButtonStyle.secondary)
     async def close(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not await _require_manager(interaction, self.bot):
+            return
         await interaction.response.edit_message(content="Panel cerrado.", embed=None, view=None)
 
 
@@ -324,36 +357,33 @@ class ModuleActionSelect(discord.ui.Select):
         toggle_key, threshold_key, window_key = MODULES[module_key]
 
         options = [
-            discord.SelectOption(label="Enable", value="enable", description=f"Enable {MODULE_LABELS.get(module_key, module_key)}"),
-            discord.SelectOption(label="Disable", value="disable", description=f"Disable {MODULE_LABELS.get(module_key, module_key)}"),
-            discord.SelectOption(label="Punishment", value="punishment", description="Set punishment type"),
-            discord.SelectOption(label="Logs", value="logs", description="Configure logs channel"),
+            discord.SelectOption(label="Activar", value="enable", description=f"Activar {MODULE_LABELS.get(module_key, module_key)}"),
+            discord.SelectOption(label="Desactivar", value="disable", description=f"Desactivar {MODULE_LABELS.get(module_key, module_key)}"),
+            discord.SelectOption(label="Castigo", value="punishment", description="Elegir un castigo propio o heredar el global"),
+            discord.SelectOption(label="Canal de registros", value="logs", description="Elegir un canal propio o usar el global"),
         ]
         if threshold_key:
-            options.append(discord.SelectOption(label="Threshold", value="threshold", description="Set threshold and window"))
-        options.append(discord.SelectOption(label="Whitelist", value="whitelist", description="Manage whitelisted users and roles"))
-        options.append(discord.SelectOption(label="Reset", value="reset", description="Reset to global configuration"))
+            options.append(discord.SelectOption(label="Límite y ventana", value="threshold", description="Configurar cuántas acciones y en cuánto tiempo"))
+        options.append(discord.SelectOption(label="Excepciones", value="whitelist", description="Agregar usuarios o roles exentos"))
+        options.append(discord.SelectOption(label="Restablecer módulo", value="reset", description="Quitar ajustes propios y heredar los globales"))
 
-        super().__init__(placeholder="Select an option...", options=options)
+        super().__init__(placeholder="Elige qué quieres personalizar…", options=options)
 
     async def callback(self, interaction: discord.Interaction):
+        if not await _require_manager(interaction, self.bot):
+            return
         action = self.values[0]
         guild = interaction.guild
         toggle_key, threshold_key, window_key = MODULES[self.module_key]
 
         if action in ("enable", "disable"):
-            config = db.get_guild(guild.id)
-            config.setdefault("antinuke", {})
-            config["antinuke"][toggle_key] = (action == "enable")
-            db.update_guild(guild.id, config)
+            db.set_guild_field(guild.id, f"antinuke.{toggle_key}", action == "enable")
             _invalidate_cache(guild.id)
             embed = build_module_embed(self.bot, guild, self.module_key)
             return await interaction.response.edit_message(embed=embed, view=self.view)
 
         if action == "reset":
-            config = db.get_guild(guild.id)
-            config.get("module_settings", {}).pop(self.module_key, None)
-            db.update_guild(guild.id, config)
+            db.set_guild_field(guild.id, f"module_settings.{self.module_key}", {})
             _invalidate_cache(guild.id)
             embed = build_module_embed(self.bot, guild, self.module_key)
             return await interaction.response.edit_message(embed=embed, view=self.view)
@@ -389,6 +419,8 @@ class BackToModulesButton(discord.ui.Button):
         self.bot = bot
 
     async def callback(self, interaction: discord.Interaction):
+        if not await _require_manager(interaction, self.bot):
+            return
         embed = build_modules_browser_embed(interaction.guild)
         view = ModuleBrowserView(self.bot)
         await interaction.response.edit_message(embed=embed, view=view)
@@ -411,8 +443,8 @@ def build_modules_browser_embed(guild: discord.Guild) -> discord.Embed:
         title="Módulos de AntiNuke",
         description=(
             f"Este servidor tiene **{len(MODULES)}** módulos de protección.\n"
-            "Elegí uno del menú de abajo para activarlo, desactivarlo, configurar su "
-            "castigo, sus logs, su whitelist o su threshold."
+            "Elige uno para activar o desactivar la protección, ajustar el castigo, "
+            "elegir el canal de registros, gestionar excepciones o cambiar su límite."
         ),
         color=0x2b2d31,
     )
@@ -431,6 +463,8 @@ class ModuleBrowserSelect(discord.ui.Select):
         super().__init__(placeholder="Selecciona un módulo para configurar...", options=options)
 
     async def callback(self, interaction: discord.Interaction):
+        if not await _require_manager(interaction, self.bot):
+            return
         module_key = self.values[0]
         embed = build_module_embed(self.bot, interaction.guild, module_key)
         view = ModuleConfigWithBackView(self.bot, module_key)

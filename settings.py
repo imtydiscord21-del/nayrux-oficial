@@ -136,8 +136,8 @@ class Settings(commands.Cog):
     async def antinuke_preset(self, ctx):
         """
         Aplica una configuración profesional recomendada en un solo comando:
-        activa el antinuke, todos los módulos, castigo ban, y thresholds ajustados
-        para servidores reales (ni muy sensible, ni muy laxo).
+        activa el antinuke, protecciones recomendadas, castigo ban y límites ajustados.
+        Anti-Link se mantiene apagado para evitar sancionar enlaces legítimos.
         """
         config = db.get_guild(ctx.guild.id)
         an = config["antinuke"]
@@ -145,14 +145,18 @@ class Settings(commands.Cog):
         an["enabled"] = True
         an["punishment"] = "ban"
 
-        # Todos los módulos activados
+        # Activa los módulos de protección y mantiene Anti-Link apagado para evitar
+        # falsos positivos con enlaces normales. Se configura de forma explícita para
+        # que los módulos añadidos al catálogo no queden fuera silenciosamente.
         for module_key in (
             "anti_ban", "anti_kick", "anti_channel_delete", "anti_channel_create",
             "anti_role_delete", "anti_role_create", "anti_role_add", "anti_webhook",
             "anti_mention", "anti_emoji_delete", "anti_bot_add", "anti_everyone_mention",
-            "anti_server_update", "anti_prune",
+            "anti_server_update", "anti_prune", "anti_role_perm", "anti_raid",
+            "anti_spam", "anti_invite", "anti_token",
         ):
             an[module_key] = True
+        an["anti_link"] = False
 
         # Thresholds recomendados
         an["ban_threshold"] = 3
@@ -181,9 +185,10 @@ class Settings(commands.Cog):
         await ctx.send(embed=build_embed(
             ctx.guild,
             "**Preset profesional aplicado.**\n"
-            "Antinuke activado, todos los módulos encendidos, castigo `ban`, "
-            "thresholds ajustados para uso real. Usa `,antinuke status` para ver el detalle "
-            "y `,antinuke threshold`/`,antinuke window` si quieres afinar algo.",
+            "AntiNuke activado con las protecciones recomendadas, castigo `ban` y límites "
+            "ajustados. Anti-Link queda apagado para evitar sancionar enlaces legítimos. "
+            "Usa `,antinuke modules` para personalizar cada protección y `,antinuke status` "
+            "para revisar el estado.",
             0x57f287,
         ))
 

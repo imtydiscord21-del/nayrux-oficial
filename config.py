@@ -134,6 +134,20 @@ class Database:
         self.get_guild(guild_id)  # asegura que el documento exista con sus valores por defecto
         _guilds.update_one({"_id": str(guild_id)}, {"$set": {key: value}}, upsert=True)
 
+    def add_guild_set_item(self, guild_id: int, key: str, value):
+        """Agrega un elemento a un arreglo sin duplicados y sin sobrescribir otros cambios."""
+        self.get_guild(guild_id)
+        return _guilds.update_one(
+            {"_id": str(guild_id)}, {"$addToSet": {key: value}}, upsert=True
+        ).modified_count > 0
+
+    def remove_guild_set_item(self, guild_id: int, key: str, value):
+        """Quita un elemento de un arreglo de forma atómica."""
+        self.get_guild(guild_id)
+        return _guilds.update_one(
+            {"_id": str(guild_id)}, {"$pull": {key: value}}
+        ).modified_count > 0
+
     def get_boost_count(self, guild_id: int, user_id: int) -> int:
         doc = _guilds.find_one(
             {"_id": str(guild_id)},
