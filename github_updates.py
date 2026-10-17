@@ -515,7 +515,8 @@ class GithubUpdates(commands.Cog):
         if not session:
             raise web.HTTPUnauthorized(text="Inicia sesión con Discord para continuar.")
         origin = request.headers.get("Origin", "")
-        if origin != "https://zayy-bot-production.up.railway.app" or request.headers.get("X-CSRF-Token") != session["csrf"]:
+        expected_origin = DISCORD_REDIRECT_URI.removesuffix("/api/auth/callback")
+        if origin != expected_origin or request.headers.get("X-CSRF-Token") != session["csrf"]:
             raise web.HTTPForbidden(text="Solicitud no válida.")
         try:
             payload = await request.json()
