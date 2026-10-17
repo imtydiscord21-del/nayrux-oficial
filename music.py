@@ -351,8 +351,9 @@ class Music(commands.Cog):
 
     @commands.Cog.listener()
     async def on_wavelink_track_exception(self, payload: wavelink.TrackExceptionEventPayload):
-        track = payload.track
-        player = payload.player
+        await self._handle_playback_failure(payload.player, payload.track, payload.exception)
+
+    async def _handle_playback_failure(self, player: wavelink.Player | None, track: wavelink.Playable, reason: str):
         if player is None:
             return
 
@@ -361,7 +362,7 @@ class Music(commands.Cog):
             return
         self._handling_failures.add(guild_id)
         try:
-            log.warning("Lavalink no pudo reproducir %s (%s): %s", track.title, track.source, payload.exception)
+            log.warning("Lavalink no pudo reproducir %s (%s): %s", track.title, track.source, reason)
             extras = dict(track.extras)
             tried_fallback = extras.get("soundcloud_fallback", False)
 
@@ -434,8 +435,13 @@ class Music(commands.Cog):
     async def on_wavelink_track_stuck(self, payload: wavelink.TrackStuckEventPayload):
         log.warning("Pista bloqueada en Lavalink (%s ms)", payload.threshold)
         player = payload.player
-        if player is not None:
-            await player.stop()
+        track = player.current if player is not None else None
+        if track is not None:
+            await self._handle_playback_failure(
+                player,
+                track,
+                f"la pista no envió audio durante {payload.threshold} ms",
+            )
 
     @commands.Cog.listener()
     async def on_wavelink_node_ready(self, payload: wavelink.NodeReadyEventPayload):
