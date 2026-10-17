@@ -1,7 +1,6 @@
 server:
   address: 0.0.0.0
   port: 2333
-  password: ${LAVALINK_PASSWORD}
 
 lavalink:
   server:
