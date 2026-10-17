@@ -20,4 +20,4 @@ Entra primero a un canal de voz y usa:
 - `,volume <0-200>`, `,loop track|queue|off`, `,shuffle`.
 - `,stop` limpia la cola y desconecta; `,leave` desconecta.
 
-La búsqueda por texto usa YouTube. Los enlaces directos compatibles los resuelve Lavalink. No incluye Spotify, filtros de audio ni autoplay en esta primera versión.
+La búsqueda por texto empieza en YouTube y, si una pista no se puede transmitir, intenta encontrarla en SoundCloud. Los enlaces directos compatibles los resuelve Lavalink. No incluye Spotify, filtros de audio ni autoplay en esta primera versión.

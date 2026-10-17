@@ -71,6 +71,24 @@ def _track_embed(title: str, track: wavelink.Playable, requester: discord.Member
 class Music(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        self._handling_failures: set[int] = set()
+
+    async def _edit_feedback(self, track: wavelink.Playable, embed: discord.Embed) -> bool:
+        extras = track.extras
+        channel_id = extras.get("feedback_channel_id")
+        message_id = extras.get("feedback_message_id")
+        if not channel_id or not message_id:
+            return False
+        channel = self.bot.get_channel(channel_id)
+        if channel is None:
+            return False
+        try:
+            message = await channel.fetch_message(message_id)
+            await message.edit(embed=embed)
+            return True
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+            log.debug("No se pudo actualizar el mensaje de reproducción", exc_info=True)
+            return False
 
     async def _ensure_voice(self, ctx: commands.Context) -> wavelink.Player | None:
         if ctx.guild is None:
@@ -136,17 +154,18 @@ class Music(commands.Cog):
         tracks = tracks[:100]
         if not tracks:
             return await msg.edit(embed=_error_embed("La lista no contiene canciones disponibles."))
+        fallback_query = query if not query.startswith(("http://", "https://")) else f"{tracks[0].title} {tracks[0].author}"
         for track in tracks:
-            track.extras = {"requester_id": ctx.author.id}
+            track.extras = {"requester_id": ctx.author.id, "search_query": fallback_query}
 
         if not player.playing and not player.paused and player.queue.is_empty:
             track = tracks.pop(0)
+            track.extras.update({"feedback_channel_id": ctx.channel.id, "feedback_message_id": msg.id})
             await player.play(track)
             if tracks:
                 await player.queue.put_wait(tracks)
-                await msg.edit(embed=_track_embed(f"Reproduciendo · {len(tracks) + 1} canciones añadidas", track, ctx.author))
             else:
-                await msg.edit(embed=_track_embed("Reproduciendo ahora", track, ctx.author))
+                await msg.edit(embed=discord.Embed(description="La encontré. Estoy conectando el audio…", color=0x2b2d31))
         else:
             position = player.queue.count + 1
             await player.queue.put_wait(tracks)
@@ -272,10 +291,15 @@ class Music(commands.Cog):
     @commands.Cog.listener()
     async def on_wavelink_track_end(self, payload: wavelink.TrackEndEventPayload):
         player = payload.player
-        if player is None or payload.reason == "replaced" or player.queue.is_empty:
+        if player is None or payload.reason in {"replaced", "loadFailed"} or player.queue.is_empty:
             return
         next_track = await player.queue.get_wait()
         await player.play(next_track)
+
+    @commands.Cog.listener()
+    async def on_wavelink_track_start(self, payload: wavelink.TrackStartEventPayload):
+        track = payload.track
+        await self._edit_feedback(track, _track_embed("Reproduciendo ahora", track))
 
     @commands.Cog.listener()
     async def on_wavelink_inactive_player(self, player: wavelink.Player):
@@ -284,7 +308,57 @@ class Music(commands.Cog):
 
     @commands.Cog.listener()
     async def on_wavelink_track_exception(self, payload: wavelink.TrackExceptionEventPayload):
-        log.warning("Lavalink no pudo reproducir una pista: %s", payload.exception)
+        track = payload.track
+        player = payload.player
+        if player is None:
+            return
+
+        guild_id = player.guild.id
+        if guild_id in self._handling_failures:
+            return
+        self._handling_failures.add(guild_id)
+        try:
+            log.warning("Lavalink no pudo reproducir %s (%s): %s", track.title, track.source, payload.exception)
+            extras = track.extras
+            tried_fallback = extras.get("soundcloud_fallback", False)
+
+            if track.source == "youtube" and not tried_fallback:
+                query = extras.get("search_query") or f"{track.title} {track.author}"
+                try:
+                    results = await wavelink.Playable.search(f"scsearch:{query}")
+                    alternatives = list(results.tracks) if isinstance(results, wavelink.Playlist) else list(results)
+                except Exception:
+                    log.warning("Falló la búsqueda alternativa en SoundCloud", exc_info=True)
+                    alternatives = []
+
+                if alternatives:
+                    alternative = alternatives[0]
+                    alternative.extras = {
+                        "requester_id": extras.get("requester_id"),
+                        "search_query": query,
+                        "soundcloud_fallback": True,
+                        "feedback_channel_id": extras.get("feedback_channel_id"),
+                        "feedback_message_id": extras.get("feedback_message_id"),
+                    }
+                    await player.play(alternative)
+                    if player.channel:
+                        await player.channel.send(embed=_success_embed("YouTube bloqueó esa pista; probando una copia de SoundCloud."))
+                    return
+
+            channel = self.bot.get_channel(extras.get("feedback_channel_id")) if extras.get("feedback_channel_id") else player.channel
+            if channel:
+                detail = "No pude transmitir esa pista desde YouTube ni encontrar una copia en SoundCloud." if track.source == "youtube" else "La fuente de audio no pudo transmitir esta pista. Prueba otra búsqueda."
+                error_embed = _error_embed(detail)
+                updated = await self._edit_feedback(track, error_embed)
+                if not updated:
+                    await channel.send(embed=error_embed)
+
+            if not player.queue.is_empty:
+                await player.play(await player.queue.get_wait())
+            else:
+                await player.stop()
+        finally:
+            self._handling_failures.discard(guild_id)
 
     @commands.Cog.listener()
     async def on_wavelink_track_stuck(self, payload: wavelink.TrackStuckEventPayload):
