@@ -19,6 +19,8 @@ _client = MongoClient(
 )
 _db = _client["bot2"]
 _guilds = _db["guilds"]
+_guild_backups = _db["guild_backups"]
+_guild_backup_assets = _db["guild_backup_assets"]
 _users = _db["users"]
 _persona = _db["persona"]  # nombre/avatar del bot POR servidor (ver premium.py)
 
@@ -147,6 +149,37 @@ class Database:
         return _guilds.update_one(
             {"_id": str(guild_id)}, {"$pull": {key: value}}
         ).modified_count > 0
+
+    def get_backup(self, guild_id: int):
+        doc = _guild_backups.find_one({"_id": str(guild_id)})
+        return doc.get("snapshot") if doc else None
+
+    def save_backup(self, guild_id: int, snapshot: dict):
+        _guild_backups.replace_one(
+            {"_id": str(guild_id)},
+            {"_id": str(guild_id), "snapshot": snapshot},
+            upsert=True,
+        )
+
+    def save_backup_asset(self, guild_id: int, digest: str, data: bytes):
+        asset_id = f"{guild_id}:{digest}"
+        _guild_backup_assets.replace_one(
+            {"_id": asset_id},
+            {"_id": asset_id, "guild_id": str(guild_id), "digest": digest, "data": data},
+            upsert=True,
+        )
+
+    def get_backup_asset(self, guild_id: int, digest: str):
+        doc = _guild_backup_assets.find_one(
+            {"_id": f"{guild_id}:{digest}"}, {"data": 1}
+        )
+        return bytes(doc["data"]) if doc and doc.get("data") is not None else None
+
+    def prune_backup_assets(self, guild_id: int, keep_digests: set[str]):
+        _guild_backup_assets.delete_many({
+            "guild_id": str(guild_id),
+            "digest": {"$nin": list(keep_digests)},
+        })
 
     def get_boost_count(self, guild_id: int, user_id: int) -> int:
         doc = _guilds.find_one(
