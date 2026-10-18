@@ -175,7 +175,7 @@ class Database:
         )
         return bytes(doc["data"]) if doc and doc.get("data") is not None else None
 
-    def prune_backup_assets(self, guild_id: int, keep_digests: set[str]):
+    def prune_backup_assets(self, guild_id: int, keep_digests):
         _guild_backup_assets.delete_many({
             "guild_id": str(guild_id),
             "digest": {"$nin": list(keep_digests)},
