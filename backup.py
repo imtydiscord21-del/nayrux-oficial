@@ -914,6 +914,79 @@ async def _restore_expressions(guild: discord.Guild, snapshot: dict, role_map: d
     return emoji_map
 
 
+def _unmatched_live_items(saved_items: list[dict], live_items: list, key_for_saved, key_for_live) -> list:
+    """Match backup objects the same way restoration does, returning live extras."""
+    remaining = {item.id: item for item in live_items}
+    unmatched_saved = []
+    for saved in saved_items:
+        item = remaining.pop(int(saved["id"]), None)
+        if item is None:
+            unmatched_saved.append(saved)
+    for saved in unmatched_saved:
+        # Match renamed/recreated objects by the same stable display key used by restore.
+        key = key_for_saved(saved)
+        match = next((item for item in remaining.values() if key_for_live(item) == key), None)
+        if match is not None:
+            remaining.pop(match.id, None)
+    return list(remaining.values())
+
+
+async def _delete_unbacked_channels(guild: discord.Guild, snapshot: dict, report: Counter):
+    """Remove raid-added channels/categories before rebuilding the saved layout."""
+    saved_channels = snapshot.get("channels")
+    saved_categories = snapshot.get("categories")
+    if (
+        not isinstance(saved_channels, list)
+        or not isinstance(saved_categories, list)
+        or not saved_channels
+    ):
+        report["cleanup_skipped"] += 1
+        log.warning(
+            "[%s] No se borrarán canales extra: el backup no contiene una estructura verificable.",
+            guild.name,
+        )
+        return
+
+    live_channels = [channel for channel in guild.channels if not isinstance(channel, discord.CategoryChannel)]
+    live_categories = list(guild.categories)
+    extra_channels = _unmatched_live_items(
+        saved_channels,
+        live_channels,
+        lambda item: (item["type"], item["name"]),
+        lambda channel: (str(channel.type), channel.name),
+    )
+    extra_categories = _unmatched_live_items(
+        saved_categories,
+        live_categories,
+        lambda item: item["name"],
+        lambda category: category.name,
+    )
+    if not extra_channels and not extra_categories:
+        return
+
+    me = guild.me
+    if not me or not me.guild_permissions.manage_channels:
+        report["skipped"] += len(extra_channels) + len(extra_categories)
+        log.warning("[%s] Faltó Manage Channels para borrar canales ajenos al backup.", guild.name)
+        return
+
+    semaphore = asyncio.Semaphore(4)
+
+    async def delete(item, counter_key: str):
+        async with semaphore:
+            try:
+                await item.delete(reason="AntiNuke: canal fuera del backup de servidor")
+                report[counter_key] += 1
+                log.info("[%s] Se eliminó el canal no respaldado: %s (%s).", guild.name, item.name, item.id)
+            except (discord.Forbidden, discord.HTTPException) as exc:
+                report["failed"] += 1
+                log.warning("[%s] No se pudo borrar el canal no respaldado %s: %s", guild.name, item.name, exc)
+
+    # Delete child channels first so categories can be removed cleanly afterwards.
+    await asyncio.gather(*(delete(channel, "channels_deleted") for channel in extra_channels))
+    await asyncio.gather(*(delete(category, "categories_deleted") for category in extra_categories))
+
+
 async def restore_guild(guild: discord.Guild, bot: commands.Bot) -> bool:
     """Restore all missing or altered supported settings from the last persistent snapshot."""
     snapshot = get_snapshot(guild.id)
@@ -926,6 +999,7 @@ async def restore_guild(guild: discord.Guild, bot: commands.Bot) -> bool:
         report = Counter()
         log.info("[%s] Iniciando restauración de backup %s.", guild.name, snapshot.get("taken_at"))
         try:
+            await _delete_unbacked_channels(guild, snapshot, report)
             role_map = await _restore_roles(guild, snapshot, report)
             category_map = await _restore_categories(guild, snapshot, role_map, report)
             emoji_map = await _restore_expressions(guild, snapshot, role_map, report)
@@ -939,7 +1013,8 @@ async def restore_guild(guild: discord.Guild, bot: commands.Bot) -> bool:
         report["objects_restored"] = sum(
             report[key] for key in ("roles_created", "roles_updated", "categories_created", "categories_updated",
                                     "channels_created", "channels_updated", "emojis_created", "emojis_updated",
-                                    "stickers_created", "stickers_updated", "guild_settings", "guild_media")
+                                    "stickers_created", "stickers_updated", "channels_deleted", "categories_deleted",
+                                    "guild_settings", "guild_media")
         )
         _last_restore[guild.id] = dict(report)
         log.info("[%s] Restauración terminada en %.2fs: %s", guild.name, elapsed, dict(report))
@@ -1005,7 +1080,7 @@ class Backup(commands.Cog):
             ))
         if sub == "restore":
             msg = await ctx.send(embed=discord.Embed(
-                description="Restaurando lo que falta y reparando la configuración…",
+                description="Quitando canales ajenos al backup y reconstruyendo la estructura guardada…",
                 color=0xfee75c,
             ))
             ok = await restore_guild(guild, self.bot)
